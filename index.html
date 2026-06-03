@@ -365,6 +365,17 @@ svg.staff{height:190px;filter:drop-shadow(0 10px 20px rgba(0,0,0,.08));}
   color:#FFB6BC;
 }
 .chord-selected-count{font-family:var(--mono);font-size:12px;color:rgba(246,241,231,.62);}
+.chord-check-dock{display:none;margin:12px 0 10px;padding:10px 12px;border-radius:18px;background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.09);}
+.chord-check-dock.show{display:block;}
+.chord-check-dock-row{display:flex;align-items:center;gap:10px;justify-content:space-between;}
+.chord-check-status{font-size:12px;color:rgba(246,241,231,.66);font-family:var(--mono);}
+.chord-check-btn{flex:1;border:1px solid rgba(255,255,255,.18);background:linear-gradient(135deg,#4777FF,#7D5DFF);color:#fff;border-radius:999px;padding:11px 14px;font-size:13px;font-family:var(--mono);font-weight:700;cursor:pointer;box-shadow:0 12px 30px rgba(71,119,255,.18);}
+.chord-check-btn:hover{transform:translateY(-1px);filter:brightness(1.04);}
+@media (max-width:720px){
+  .chord-check-dock-row{flex-direction:column;align-items:stretch;}
+  .chord-check-status{text-align:left;}
+}
+
 @media (max-width:720px){
   .chord-row{align-items:stretch;flex-direction:column;}
   .chord-action-btn{width:100%;}
@@ -400,6 +411,62 @@ svg.staff{height:190px;filter:drop-shadow(0 10px 20px rgba(0,0,0,.08));}
 }
 .keyboard-mode-btn:hover{background:rgba(255,255,255,.13);color:#FFF7EA;transform:translateY(-1px);}
 .keyboard-mode-btn.auto{background:linear-gradient(135deg,#4777FF,#7D5DFF);color:#fff;border-color:rgba(255,255,255,.24);box-shadow:0 12px 30px rgba(71,119,255,.18);}
+.sound-control-bar{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin:0 0 12px;
+  padding:10px 12px;
+  border-radius:18px;
+  background:rgba(255,255,255,.055);
+  border:1px solid rgba(255,255,255,.09);
+}
+.sound-control-label{
+  font-size:11px;
+  font-family:var(--mono);
+  letter-spacing:.05em;
+  color:rgba(246,241,231,.56);
+}
+.sound-control-help{
+  margin-top:6px;
+  font-size:11px;
+  line-height:1.45;
+  color:rgba(246,241,231,.46);
+}
+.sound-btn,.sound-mini-btn{
+  border:1px solid rgba(255,255,255,.14);
+  background:rgba(255,255,255,.08);
+  color:rgba(246,241,231,.76);
+  border-radius:999px;
+  padding:7px 12px;
+  font-size:11px;
+  font-family:var(--mono);
+  cursor:pointer;
+  transition:all .15s;
+  white-space:nowrap;
+}
+.sound-btn:hover,.sound-mini-btn:hover{background:rgba(255,255,255,.13);color:#FFF7EA;transform:translateY(-1px);}
+.sound-btn.on{
+  background:linear-gradient(135deg,#2BCB89,#32A3FF);
+  color:#fff;
+  border-color:rgba(255,255,255,.24);
+  box-shadow:0 12px 30px rgba(43,203,137,.16);
+}
+.staff-action-row{
+  display:grid;
+  grid-template-columns:1fr auto;
+  gap:10px;
+  margin:8px 0 12px;
+}
+.staff-action-row .staff-skip-btn{margin:0;}
+.sound-mini-btn{min-width:92px;padding:10px 12px;border-radius:14px;}
+@media (max-width:720px){
+  .sound-control-bar{align-items:flex-start;flex-direction:column;}
+  .sound-btn{width:100%;}
+  .staff-action-row{grid-template-columns:1fr;}
+  .sound-mini-btn{width:100%;}
+}
 .keyboard-mode-help{
   margin-top:6px;
   font-size:11px;
@@ -496,6 +563,14 @@ input[type="range"]{accent-color:#7DB7FF;}
     <div class="stab" id="qtab-chord" onclick="setQuestionMode('chord',this)">重音 / Chord</div>
   </div>
 
+  <div class="sound-control-bar">
+    <div>
+      <div class="sound-control-label">Sound — 音確認</div>
+      <div class="sound-control-help" id="sound-help">OFF：音は鳴りません</div>
+    </div>
+    <button class="sound-btn" id="sound-toggle-btn" onclick="toggleSound()">SOUND OFF</button>
+  </div>
+
   <!-- key sig panel -->
   <div class="keysig-panel">
     <div class="keysig-title">Key Signature — 調号（和名 / Major / Minor）</div>
@@ -536,7 +611,10 @@ input[type="range"]{accent-color:#7DB7FF;}
     <svg class="staff" id="staff-svg" viewBox="0 -70 560 210" xmlns="http://www.w3.org/2000/svg"></svg>
   </div>
 
-  <button class="staff-skip-btn" onclick="nextQuestion()">次の問題へ / Skip →</button>
+  <div class="staff-action-row">
+    <button class="staff-skip-btn" onclick="nextQuestion()">次の問題へ / Skip →</button>
+    <button class="sound-mini-btn" onclick="playCurrentQuestion()">問題を鳴らす</button>
+  </div>
 
   <div class="feedback-bar wait" id="feedback">音名ボタンまたは鍵盤をタップ</div>
 
@@ -552,6 +630,13 @@ input[type="range"]{accent-color:#7DB7FF;}
   </div>
 
   <!-- piano keyboard -->
+  <div class="chord-check-dock" id="chord-check-dock">
+    <div class="chord-check-dock-row">
+      <div class="chord-check-status" id="chord-check-status">重音 選択: 0 / 2</div>
+      <button class="chord-check-btn" onclick="submitChordAnswer()">ここで答え合わせ / Check</button>
+    </div>
+  </div>
+
   <div class="keyboard-mode-bar">
     <div>
       <div class="keyboard-mode-label">Keyboard Position — 鍵盤位置</div>
@@ -679,6 +764,9 @@ let currentChord=null;
 let chordSelection=new Set();
 let chordPitchSelection=new Set();
 let chordVoicingMode='mixed';
+let soundEnabled=false;
+let soundUnlocked=false;
+let audioCtx=null;
 
 function toggleAuto(){
   autoAdvance=!autoAdvance;
@@ -688,6 +776,116 @@ function toggleAuto(){
   knob.style.left=autoAdvance?'18px':'2px';
   document.getElementById('next-btn').style.display='none';
   if(autoAdvance&&answered){ clearTimeout(autoTimer); nextQuestion(); }
+}
+
+function ensureAudio(){
+  if(!audioCtx){
+    audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+  }
+  if(audioCtx.state==='suspended') audioCtx.resume();
+  soundUnlocked=true;
+  return audioCtx;
+}
+
+function toggleSound(){
+  soundEnabled=!soundEnabled;
+  const btn=document.getElementById('sound-toggle-btn');
+  const help=document.getElementById('sound-help');
+  if(soundEnabled){
+    ensureAudio();
+    if(btn){btn.textContent='SOUND ON';btn.classList.add('on');}
+    if(help) help.textContent='ON：出題音・鍵盤タップ・答え合わせ後の正解音を鳴らします';
+    setTimeout(()=>playCurrentQuestion(),80);
+  }else{
+    if(btn){btn.textContent='SOUND OFF';btn.classList.remove('on');}
+    if(help) help.textContent='OFF：音は鳴りません';
+  }
+}
+
+function midiFromNote(note){
+  const semis={C:0,D:2,E:4,F:5,G:7,A:9,B:11};
+  let acc=0;
+  if(selectedKeySig&&selectedKeySig.sharps&&selectedKeySig.sharps.includes(note.n)) acc=1;
+  if(selectedKeySig&&selectedKeySig.flats&&selectedKeySig.flats.includes(note.n)) acc=-1;
+  return (note.o+1)*12 + semis[note.n] + acc;
+}
+
+function freqFromMidi(midi){
+  return 440*Math.pow(2,(midi-69)/12);
+}
+
+function playPianoTone(note,when=0,duration=1.1,gainLevel=.18){
+  if(!soundEnabled || !note) return;
+  const ctx=ensureAudio();
+  const t=ctx.currentTime+when;
+  const freq=freqFromMidi(midiFromNote(note));
+
+  const out=ctx.createGain();
+  out.gain.setValueAtTime(0.0001,t);
+  out.gain.exponentialRampToValueAtTime(gainLevel,t+0.015);
+  out.gain.exponentialRampToValueAtTime(gainLevel*0.55,t+0.12);
+  out.gain.exponentialRampToValueAtTime(0.0001,t+duration);
+  out.connect(ctx.destination);
+
+  const partials=[
+    {mul:1,g:1.0},
+    {mul:2.01,g:.30},
+    {mul:3.02,g:.14},
+    {mul:4.01,g:.07}
+  ];
+  partials.forEach((p,idx)=>{
+    const osc=ctx.createOscillator();
+    const g=ctx.createGain();
+    osc.type=idx===0?'triangle':'sine';
+    osc.frequency.setValueAtTime(freq*p.mul,t);
+    g.gain.setValueAtTime((gainLevel*p.g)/(partials.length*1.15),t);
+    osc.connect(g);g.connect(out);
+    osc.start(t);osc.stop(t+duration+0.04);
+  });
+
+  // light hammer/noise click for piano-like attack
+  const noiseDur=0.025;
+  const buffer=ctx.createBuffer(1,Math.max(1,Math.floor(ctx.sampleRate*noiseDur)),ctx.sampleRate);
+  const data=buffer.getChannelData(0);
+  for(let i=0;i<data.length;i++) data[i]=(Math.random()*2-1)*Math.pow(1-i/data.length,2);
+  const noise=ctx.createBufferSource();
+  const ng=ctx.createGain();
+  const hp=ctx.createBiquadFilter();
+  hp.type='highpass';hp.frequency.setValueAtTime(1800,t);
+  ng.gain.setValueAtTime(gainLevel*.055,t);
+  ng.gain.exponentialRampToValueAtTime(0.0001,t+noiseDur);
+  noise.buffer=buffer;
+  noise.connect(hp);hp.connect(ng);ng.connect(ctx.destination);
+  noise.start(t);noise.stop(t+noiseDur);
+}
+
+function playNotes(notes,spread=false){
+  if(!soundEnabled) return;
+  const list=(Array.isArray(notes)?notes:[notes]).filter(Boolean);
+  if(list.length===0) return;
+  const gain=Math.min(.16,.28/Math.sqrt(list.length));
+  list.forEach((n,i)=>playPianoTone(n,spread?i*.08:0,1.15,gain));
+}
+
+function playCurrentQuestion(){
+  if(!soundEnabled){
+    const help=document.getElementById('sound-help');
+    if(help) help.textContent='SOUND ONにすると問題音を再生できます';
+    return;
+  }
+  if(questionMode==='chord'&&currentChord) playNotes(currentChord.notes,false);
+  else if(currentNote) playNotes(currentNote,false);
+}
+
+function playAnswerSound(){
+  if(!soundEnabled) return;
+  if(questionMode==='chord'&&currentChord) playNotes(currentChord.notes,false);
+  else if(currentNote) playNotes(currentNote,false);
+}
+
+function playSelectedNoteSound(note){
+  if(!soundEnabled||!note) return;
+  playPianoTone(note,0,.75,.16);
 }
 
 function toggleKeyboardMode(){
@@ -817,6 +1015,7 @@ function setQuestionMode(mode,el){
   if(el) el.classList.add('active');
   const panel=document.getElementById('chord-panel');
   if(panel) panel.classList.toggle('show',questionMode==='chord');
+  updateChordCheckDock();
   nextQuestion();
 }
 
@@ -1146,6 +1345,17 @@ function generateChordQuestion(){
   };
 }
 
+function updateChordCheckDock(){
+  const dock=document.getElementById('chord-check-dock');
+  const status=document.getElementById('chord-check-status');
+  if(!dock||!status) return;
+  const show=(questionMode==='chord');
+  dock.classList.toggle('show',show);
+  if(show){
+    status.textContent=`重音 選択: ${chordPitchSelection.size} / ${chordSize}`;
+  }
+}
+
 function updateChordPanel(){
   const count=document.getElementById('chord-selected-count');
   const info=document.getElementById('chord-info');
@@ -1155,6 +1365,7 @@ function updateChordPanel(){
     info.textContent=`${currentChord.label}　鍵盤で実音 ${chordSize}音を選択してください。譜面スパン: ${span}半音`;
   }
   updateChordPitchRow();
+  updateChordCheckDock();
 }
 
 function clearChordSelection(){
@@ -1200,6 +1411,7 @@ function submitChordAnswer(){
     if(currentChord.letters.includes(en)) b.classList.add('correct');
   });
   renderKeyboard(currentChord.notes);
+  playAnswerSound();
   updateStats();
   history.unshift({
     chord:true,
@@ -1298,6 +1510,7 @@ function nextQuestion(){
   document.getElementById('clef-label').textContent=(currentClef==='treble'?'TREBLE CLEF':'BASS CLEF')+' — '+clefJP+(questionMode==='chord'?' / CHORD':'');
   updateKeyTip();
   updateChordPanel();
+  if(soundEnabled) setTimeout(()=>playCurrentQuestion(),90);
 }
 
 function selectNote(n,displayLabel=n){
@@ -1322,6 +1535,7 @@ function selectNote(n,displayLabel=n){
     fb.textContent=`✗ 不正解 → 正解: ${currentNote.n} — ${jp}`;
     fb.className='feedback-bar ng';
   }
+  playAnswerSound();
   // highlight buttons + show octave on correct button
   document.querySelectorAll('.note-btn').forEach(b=>{
     const en=b.querySelector('.en').textContent;
@@ -1694,8 +1908,8 @@ function renderKeyboard(answerNote){
       lbl.style.cssText=`font-size:8px;font-family:'DM Mono',monospace;color:${isAns?'#185FA5':'#CCC'};line-height:1;flex-shrink:0;`;
       lbl.textContent=n+oct;
       d.appendChild(lbl);
-      d.addEventListener('mousedown',e=>{e.preventDefault();questionMode==='chord'?toggleChordPitch({n,o:oct}):selectNote(n);});
-      d.addEventListener('touchstart',e=>{e.preventDefault();questionMode==='chord'?toggleChordPitch({n,o:oct}):selectNote(n);},{passive:false});
+      d.addEventListener('mousedown',e=>{e.preventDefault();playSelectedNoteSound({n,o:oct});questionMode==='chord'?toggleChordPitch({n,o:oct}):selectNote(n);});
+      d.addEventListener('touchstart',e=>{e.preventDefault();playSelectedNoteSound({n,o:oct});questionMode==='chord'?toggleChordPitch({n,o:oct}):selectNote(n);},{passive:false});
       wrap.appendChild(d);
       if(isAns) answerDiv=d;
       if(isTarget) targetDiv=d;
@@ -1730,8 +1944,8 @@ function renderKeyboard(answerNote){
       lbl.style.cssText=`font-size:7px;font-family:'DM Mono',monospace;color:${(isAns||isSelected)?'#fff':'#666'};line-height:1;`;
       lbl.textContent=keyLabel;
       d.appendChild(lbl);
-      d.addEventListener('mousedown',e=>{e.preventDefault();questionMode==='chord'?toggleChordPitch({n:selectValue,o:oct}):selectNote(selectValue,displayValue);});
-      d.addEventListener('touchstart',e=>{e.preventDefault();questionMode==='chord'?toggleChordPitch({n:selectValue,o:oct}):selectNote(selectValue,displayValue);},{passive:false});
+      d.addEventListener('mousedown',e=>{e.preventDefault();playSelectedNoteSound({n:selectValue,o:oct});questionMode==='chord'?toggleChordPitch({n:selectValue,o:oct}):selectNote(selectValue,displayValue);});
+      d.addEventListener('touchstart',e=>{e.preventDefault();playSelectedNoteSound({n:selectValue,o:oct});questionMode==='chord'?toggleChordPitch({n:selectValue,o:oct}):selectNote(selectValue,displayValue);},{passive:false});
       wrap.appendChild(d);
       if(isAns) answerDiv=d;
       if(isTarget) targetDiv=d;
