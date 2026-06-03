@@ -1,0 +1,1209 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Music Trainer</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Noto+Sans+JP:wght@400;500;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#F7F5F0;--bg2:#EEEAE0;--ink:#1A1714;--ink2:#5A5550;--ink3:#9A958F;
+  --accent:#2D5FA3;--accent2:#E8F0FC;
+  --green:#2A7A4A;--green2:#E5F5EC;
+  --red:#B83030;--red2:#FDEAEA;
+  --amber:#A05A10;--amber2:#FDF0DE;
+  --border:#D8D3CB;--radius:10px;
+  --mono:'DM Mono',monospace;--sans:'Noto Sans JP',sans-serif;--serif:'Playfair Display',serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);min-height:100vh;}
+.nav{background:var(--ink);display:flex;align-items:center;padding:0 1.5rem;height:52px;}
+.nav-title{font-family:var(--serif);font-size:18px;color:#F7F5F0;margin-right:auto;letter-spacing:.02em;}
+.nav-tab{padding:0 1.1rem;height:52px;display:flex;align-items:center;font-size:12px;font-family:var(--mono);color:#9A958F;cursor:pointer;border-bottom:2px solid transparent;transition:all .15s;letter-spacing:.05em;}
+.nav-tab:hover{color:#F7F5F0;}
+.nav-tab.active{color:#F7F5F0;border-bottom-color:#6AA3E8;}
+.page{display:none;padding:1.5rem 1.25rem;max-width:720px;margin:0 auto;}
+.page.active{display:block;}
+/* stats */
+.stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:1.25rem;}
+.stat{background:#fff;border:.5px solid var(--border);border-radius:var(--radius);padding:10px;text-align:center;}
+.stat-num{font-family:var(--mono);font-size:20px;font-weight:500;}
+.stat-lbl{font-size:10px;color:var(--ink3);margin-top:2px;text-transform:uppercase;letter-spacing:.08em;}
+/* settings bar */
+.settings-bar{display:flex;gap:8px;margin-bottom:1rem;flex-wrap:wrap;}
+.stab{padding:6px 12px;font-size:11px;font-family:var(--mono);border:.5px solid var(--border);border-radius:20px;background:#fff;color:var(--ink2);cursor:pointer;transition:all .15s;white-space:nowrap;}
+.stab.active{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:500;}
+.stab.key-active{background:#3A2070;border-color:#3A2070;color:#fff;font-weight:500;}
+/* staff */
+.staff-card{background:#fff;border:.5px solid var(--border);border-radius:var(--radius);padding:1rem 1rem .75rem;margin-bottom:1rem;}
+.clef-badge{font-size:11px;font-family:var(--mono);color:var(--ink3);margin-bottom:6px;display:flex;align-items:center;gap:6px;}
+.clef-dot{width:6px;height:6px;border-radius:50%;background:var(--accent);}
+svg.staff{width:100%;height:110px;}
+/* feedback inline */
+.feedback-bar{min-height:38px;display:flex;align-items:center;gap:10px;padding:4px 0 8px;font-size:15px;font-weight:500;font-family:var(--mono);}
+.feedback-bar.ok{color:var(--green);}
+.feedback-bar.ng{color:var(--red);}
+.feedback-bar.wait{color:var(--ink3);font-size:13px;font-weight:400;}
+/* note buttons */
+.note-buttons{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-bottom:8px;}
+.note-btn{padding:0;aspect-ratio:1;border:.5px solid var(--border);border-radius:8px;background:#fff;cursor:pointer;transition:all .12s;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;}
+.note-btn .en{font-family:var(--mono);font-size:15px;font-weight:500;}
+.note-btn .jp{font-size:11px;color:var(--ink3);}
+.note-btn:hover{background:var(--bg2);}
+.note-btn.correct{background:var(--green2);border-color:var(--green);transform:scale(1.06);}
+.note-btn.correct .en{color:var(--green);}
+.note-btn.correct .jp{color:#4A9A6A;}
+.note-btn.wrong{background:var(--red2);border-color:var(--red);}
+.note-btn.wrong .en{color:var(--red);}
+.note-btn.wrong .jp{color:var(--red);}
+/* keyboard */
+.keyboard-wrap{background:#fff;border:.5px solid var(--border);border-radius:var(--radius);padding:10px 8px 8px;margin-bottom:8px;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;cursor:grab;}
+.keyboard-wrap:active{cursor:grabbing;}
+/* skip */
+.skip-btn{width:100%;padding:9px;font-size:13px;font-family:var(--mono);border:.5px solid var(--border);border-radius:var(--radius);background:#fff;color:var(--ink2);cursor:pointer;transition:background .15s;}
+.skip-btn:hover{background:var(--bg2);}
+/* key sig selector */
+.keysig-panel{background:#fff;border:.5px solid var(--border);border-radius:var(--radius);padding:10px 12px;margin-bottom:1rem;}
+.keysig-title{font-size:11px;font-family:var(--mono);color:var(--ink3);margin-bottom:8px;letter-spacing:.06em;text-transform:uppercase;}
+.keysig-row{display:flex;gap:5px;flex-wrap:wrap;}
+.ks-btn{padding:5px 10px;font-size:12px;font-family:var(--mono);border:.5px solid var(--border);border-radius:6px;background:#fff;color:var(--ink2);cursor:pointer;transition:all .12s;}
+.ks-btn.active{background:#3A2070;border-color:#3A2070;color:#fff;font-weight:500;}
+/* ===rhythm=== */
+.rhythm-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem;}
+.rhythm-title{font-family:var(--serif);font-size:22px;}
+.bpm-ctl{display:flex;align-items:center;gap:8px;font-size:12px;font-family:var(--mono);color:var(--ink3);}
+.bpm-ctl input{width:90px;}
+#bpm-val{font-size:15px;font-weight:500;color:var(--ink);min-width:28px;}
+.rhythm-card{background:#fff;border:.5px solid var(--border);border-radius:var(--radius);padding:1.25rem;margin-bottom:1rem;}
+.rlvl-tabs{display:flex;gap:6px;margin-bottom:1.25rem;}
+.rlvl{flex:1;padding:7px 4px;font-size:12px;font-family:var(--mono);border:.5px solid var(--border);border-radius:var(--radius);background:#fff;color:var(--ink2);cursor:pointer;text-align:center;transition:all .15s;}
+.rlvl.active{background:var(--ink);color:#F7F5F0;border-color:var(--ink);}
+.beat-display{display:flex;align-items:center;justify-content:center;gap:8px;padding:1.25rem 0;flex-wrap:wrap;}
+.beat-cell{display:flex;flex-direction:column;align-items:center;gap:5px;}
+.beat-box{width:42px;height:42px;border-radius:8px;background:var(--bg2);border:1.5px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:18px;transition:all .1s;}
+.beat-box.active{background:var(--accent);border-color:var(--accent);color:#fff;transform:scale(1.1);}
+.beat-box.rest{color:var(--ink3);}
+.beat-num{font-family:var(--mono);font-size:10px;color:var(--ink3);}
+.bar-sep{width:2px;height:42px;background:var(--border);border-radius:1px;margin:0 2px;}
+.pattern-label{font-size:11px;font-family:var(--mono);color:var(--ink3);text-align:center;margin-bottom:8px;letter-spacing:.06em;}
+.tap-zone{background:var(--bg2);border:1.5px dashed var(--border);border-radius:var(--radius);padding:1.5rem;text-align:center;cursor:pointer;user-select:none;transition:all .1s;margin-bottom:.75rem;}
+.tap-zone.tapped{background:var(--accent2);border-color:var(--accent);}
+.tap-lbl{font-size:13px;font-family:var(--mono);color:var(--ink2);}
+.tap-fb{min-height:26px;text-align:center;font-size:13px;font-family:var(--mono);padding:3px 0;color:var(--ink2);}
+.tap-fb.ok{color:var(--green);}
+.tap-fb.ng{color:var(--red);}
+.rhythm-score{display:flex;gap:8px;margin-bottom:1rem;}
+.rscore{flex:1;background:#fff;border:.5px solid var(--border);border-radius:var(--radius);padding:9px;text-align:center;}
+.rscore-num{font-family:var(--mono);font-size:19px;font-weight:500;}
+.rscore-lbl{font-size:10px;color:var(--ink3);margin-top:2px;text-transform:uppercase;letter-spacing:.07em;}
+.r-actions{display:flex;gap:8px;}
+.btn-play{flex:2;padding:11px;font-size:13px;font-family:var(--mono);border:none;border-radius:var(--radius);background:var(--ink);color:#F7F5F0;cursor:pointer;font-weight:500;}
+.btn-play.playing{background:var(--red);}
+.btn-new{flex:1;padding:11px;font-size:13px;font-family:var(--mono);border:.5px solid var(--border);border-radius:var(--radius);background:#fff;color:var(--ink2);cursor:pointer;}
+.btn-new:hover{background:var(--bg2);}
+
+
+/* =========================================================
+   VISUAL POLISH PATCH — premium app skin / CSS only
+   既存JS・HTML構造は変更せず、見た目だけを上書き
+   ========================================================= */
+:root{
+  --bg:#101114;
+  --bg2:#171A20;
+  --ink:#F6F1E7;
+  --ink2:#C8BFAF;
+  --ink3:#8F879A;
+  --accent:#7DB7FF;
+  --accent2:#14263D;
+  --green:#53D48C;
+  --green2:#123323;
+  --red:#FF6B76;
+  --red2:#3A171D;
+  --amber:#F7B955;
+  --amber2:#3B2914;
+  --border:rgba(255,255,255,.12);
+  --radius:18px;
+  --surface:rgba(255,255,255,.075);
+  --surface2:rgba(255,255,255,.105);
+  --shadow:0 20px 60px rgba(0,0,0,.36);
+  --glow:0 0 0 1px rgba(125,183,255,.18),0 18px 45px rgba(29,91,180,.22);
+}
+html{background:#090A0D;}
+body{
+  background:
+    radial-gradient(circle at 20% 0%,rgba(125,183,255,.23),transparent 34%),
+    radial-gradient(circle at 88% 12%,rgba(167,122,255,.20),transparent 30%),
+    linear-gradient(135deg,#0C0D12 0%,#171318 48%,#0D1118 100%);
+  color:var(--ink);
+  letter-spacing:.01em;
+  overflow-x:hidden;
+}
+body:before{
+  content:"";
+  position:fixed;inset:0;pointer-events:none;z-index:-1;
+  background-image:linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);
+  background-size:42px 42px;
+  mask-image:linear-gradient(to bottom,rgba(0,0,0,.65),transparent 78%);
+}
+.nav{
+  height:66px;
+  padding:0 max(18px,calc((100vw - 880px)/2));
+  background:rgba(8,9,12,.74);
+  border-bottom:1px solid rgba(255,255,255,.10);
+  backdrop-filter:blur(20px) saturate(130%);
+  -webkit-backdrop-filter:blur(20px) saturate(130%);
+  position:sticky;top:0;z-index:30;
+  box-shadow:0 14px 40px rgba(0,0,0,.28);
+}
+.nav-title{
+  font-size:22px;
+  line-height:1;
+  color:#FFF7EA;
+  text-shadow:0 0 24px rgba(125,183,255,.22);
+  display:flex;align-items:center;gap:10px;
+}
+.nav-title:before{content:"♪";font-family:var(--mono);font-size:16px;color:var(--accent);background:rgba(125,183,255,.12);border:1px solid rgba(125,183,255,.25);width:30px;height:30px;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;}
+.nav-tab{
+  height:40px;
+  border-radius:999px;
+  padding:0 1rem;
+  border:1px solid transparent;
+  color:rgba(246,241,231,.56);
+  font-size:11px;
+}
+.nav-tab:hover{background:rgba(255,255,255,.06);color:#FFF7EA;}
+.nav-tab.active{background:linear-gradient(135deg,rgba(125,183,255,.24),rgba(167,122,255,.15));border-color:rgba(125,183,255,.32);border-bottom-color:rgba(125,183,255,.32);box-shadow:inset 0 1px 0 rgba(255,255,255,.12);}
+.page{max-width:880px;padding:28px 18px 44px;}
+.stats-row,.rhythm-score{gap:12px;margin-bottom:18px;}
+.stat,.rscore,.staff-card,.keysig-panel,.rhythm-card,.keyboard-wrap{
+  background:linear-gradient(180deg,rgba(255,255,255,.105),rgba(255,255,255,.065));
+  border:1px solid var(--border);
+  box-shadow:var(--shadow),inset 0 1px 0 rgba(255,255,255,.10);
+  backdrop-filter:blur(16px) saturate(135%);
+  -webkit-backdrop-filter:blur(16px) saturate(135%);
+}
+.stat,.rscore{border-radius:16px;padding:14px 10px;position:relative;overflow:hidden;}
+.stat:after,.rscore:after{content:"";position:absolute;inset:0;background:linear-gradient(135deg,rgba(255,255,255,.10),transparent 35%);pointer-events:none;}
+.stat-num,.rscore-num{font-size:24px;color:#FFF9EE;text-shadow:0 0 18px rgba(125,183,255,.18);}
+.stat-lbl,.rscore-lbl{color:rgba(246,241,231,.46);font-size:9.5px;}
+.settings-bar{gap:10px;margin-bottom:14px!important;}
+.stab,.ks-btn,.rlvl,.skip-btn,.btn-new{
+  background:rgba(255,255,255,.075);
+  color:rgba(246,241,231,.70);
+  border:1px solid rgba(255,255,255,.12);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.06);
+}
+.stab:hover,.ks-btn:hover,.rlvl:hover,.skip-btn:hover,.btn-new:hover{background:rgba(255,255,255,.12);color:#FFF7EA;transform:translateY(-1px);}
+.stab.active,.ks-btn.active{background:linear-gradient(135deg,#4777FF,#8F65FF);border-color:rgba(255,255,255,.24);color:#fff;box-shadow:var(--glow);}
+.keysig-panel{border-radius:18px;padding:14px 16px;margin-bottom:16px;}
+.keysig-title,.pattern-label{color:rgba(246,241,231,.48);}
+.keysig-row{gap:8px;align-items:stretch;}
+.ks-btn{min-width:96px;text-align:center;}
+.ks-btn{
+  border-radius:18px;
+  padding:8px 10px;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  align-items:center;
+  gap:2px;
+  min-height:64px;
+  line-height:1.08;
+}
+.ks-jp{font-size:12px;font-weight:700;color:#FFF7EA;letter-spacing:.01em;}
+.ks-major{font-size:10px;color:rgba(246,241,231,.80);font-family:var(--mono);}
+.ks-minor{font-size:10px;color:rgba(246,241,231,.52);font-family:var(--mono);}
+.ks-btn.active .ks-jp,.ks-btn.active .ks-major,.ks-btn.active .ks-minor{color:#fff;}
+.keysig-tip-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,.08);}
+.keysig-tip-label{font-size:11px;font-family:var(--mono);letter-spacing:.06em;color:rgba(246,241,231,.52);text-transform:uppercase;}
+.tip-toggle-btn{
+  border:1px solid rgba(255,255,255,.14);
+  background:rgba(255,255,255,.08);
+  color:rgba(246,241,231,.72);
+  border-radius:999px;
+  padding:7px 12px;
+  font-size:11px;
+  font-family:var(--mono);
+  cursor:pointer;
+  transition:all .15s;
+}
+.tip-toggle-btn:hover{background:rgba(255,255,255,.13);color:#FFF7EA;transform:translateY(-1px);}
+.tip-toggle-btn.active{background:linear-gradient(135deg,#2BCB89,#32A3FF);color:#fff;border-color:rgba(255,255,255,.24);box-shadow:0 0 0 1px rgba(50,163,255,.18),0 14px 35px rgba(43,203,137,.14);}
+.keysig-tip{
+  display:none;
+  margin-top:12px;
+  padding:14px;
+  border-radius:18px;
+  background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.05));
+  border:1px solid rgba(255,255,255,.10);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.06);
+}
+.keysig-tip.show{display:block;}
+.tip-title{font-size:15px;font-weight:700;color:#FFF7EA;margin-bottom:6px;}
+.tip-copy{font-size:12px;line-height:1.6;color:rgba(246,241,231,.74);margin-bottom:10px;}
+.tip-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
+.tip-card{padding:12px;border-radius:14px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);}
+.tip-card-title{font-size:10px;font-family:var(--mono);letter-spacing:.08em;color:rgba(246,241,231,.46);text-transform:uppercase;margin-bottom:8px;}
+.tip-chip-row{display:flex;flex-wrap:wrap;gap:7px;}
+.tip-chip{padding:6px 9px;border-radius:999px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.08);font-size:12px;color:#FFF7EA;}
+.tip-chip.aff{background:rgba(80,140,255,.18);border-color:rgba(80,140,255,.28);}
+.tip-chip.nat{background:rgba(255,255,255,.07);color:rgba(246,241,231,.82);}
+.tip-chip.mem{background:rgba(247,185,85,.13);border-color:rgba(247,185,85,.24);color:#FFE2A6;}
+.tip-chip.mem-on{background:rgba(247,185,85,.18);border-color:rgba(247,185,85,.34);color:#FFE2A6;font-weight:700;}
+.tip-chip.mem-off{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.14);color:#FFFFFF;}
+.tip-note{margin-top:10px;font-size:12px;line-height:1.55;color:rgba(246,241,231,.64);}
+@media (max-width:720px){
+  .tip-grid{grid-template-columns:1fr;}
+  .keysig-tip-head{align-items:flex-start;flex-direction:column;}
+}
+
+.staff-card{
+  border-radius:24px;
+  padding:18px 18px 12px;
+  margin-bottom:14px;
+  background:
+    linear-gradient(180deg,rgba(255,255,255,.96),rgba(246,241,231,.91)),
+    radial-gradient(circle at 85% 0%,rgba(125,183,255,.18),transparent 40%);
+  color:#16130F;
+  box-shadow:0 24px 70px rgba(0,0,0,.38),inset 0 1px 0 rgba(255,255,255,.75);
+}
+.clef-badge{color:#71695F;font-weight:600;}
+.clef-dot{background:linear-gradient(135deg,#4777FF,#7DB7FF);box-shadow:0 0 0 4px rgba(71,119,255,.12);}
+svg.staff{height:126px;filter:drop-shadow(0 10px 20px rgba(0,0,0,.08));}
+.feedback-bar{
+  border-radius:14px;
+  padding:10px 14px;
+  margin-bottom:12px;
+  background:rgba(255,255,255,.055);
+  border:1px solid rgba(255,255,255,.08);
+}
+.feedback-bar.wait{color:rgba(246,241,231,.52);}
+.feedback-bar.ok{background:linear-gradient(135deg,rgba(83,212,140,.15),rgba(83,212,140,.05));border-color:rgba(83,212,140,.24);color:#78F0A9;}
+.feedback-bar.ng{background:linear-gradient(135deg,rgba(255,107,118,.16),rgba(255,107,118,.05));border-color:rgba(255,107,118,.25);color:#FF8D95;}
+.note-buttons{gap:9px;margin-bottom:12px;}
+.note-btn{
+  border-radius:18px;
+  background:linear-gradient(180deg,rgba(255,255,255,.12),rgba(255,255,255,.06));
+  border:1px solid rgba(255,255,255,.12);
+  color:var(--ink);
+  box-shadow:0 10px 24px rgba(0,0,0,.20),inset 0 1px 0 rgba(255,255,255,.08);
+}
+.note-btn:hover{background:rgba(255,255,255,.14);transform:translateY(-2px);}
+.note-btn .en{font-size:18px;color:#FFF7EA;}
+.note-btn .jp{color:rgba(246,241,231,.46);}
+.note-btn.correct{background:linear-gradient(180deg,rgba(83,212,140,.30),rgba(83,212,140,.13));border-color:rgba(83,212,140,.55);box-shadow:0 0 0 4px rgba(83,212,140,.10),0 16px 36px rgba(83,212,140,.16);}
+.note-btn.correct .en,.note-btn.correct .jp{color:#91FFBB;}
+.note-btn.wrong{background:linear-gradient(180deg,rgba(255,107,118,.28),rgba(255,107,118,.12));border-color:rgba(255,107,118,.50);}
+.note-btn.wrong .en,.note-btn.wrong .jp{color:#FF9CA3;}
+.keyboard-wrap{border-radius:22px;padding:13px 12px 11px;margin-bottom:12px;background:linear-gradient(180deg,rgba(255,255,255,.12),rgba(255,255,255,.07));}
+.keyboard-wrap::-webkit-scrollbar{height:9px;}
+.keyboard-wrap::-webkit-scrollbar-track{background:rgba(255,255,255,.06);border-radius:999px;}
+.keyboard-wrap::-webkit-scrollbar-thumb{background:rgba(125,183,255,.45);border-radius:999px;}
+.skip-btn,.btn-new,.btn-play{border-radius:16px;padding:13px;font-weight:600;}
+.btn-play{background:linear-gradient(135deg,#4777FF,#7D5DFF);box-shadow:0 18px 42px rgba(71,119,255,.28);}
+.btn-play.playing{background:linear-gradient(135deg,#FF5969,#B83030);box-shadow:0 18px 42px rgba(255,89,105,.22);}
+.rhythm-header{margin:4px 0 20px;}
+.rhythm-title{font-size:30px;color:#FFF7EA;text-shadow:0 0 28px rgba(125,183,255,.18);}
+.bpm-ctl{color:rgba(246,241,231,.52);background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.10);border-radius:999px;padding:8px 12px;}
+#bpm-val{color:#FFF7EA;}
+input[type="range"]{accent-color:#7DB7FF;}
+.rlvl-tabs{gap:10px;}
+.rlvl{border-radius:16px;padding:10px 8px;}
+.rlvl.active{background:linear-gradient(135deg,rgba(125,183,255,.25),rgba(167,122,255,.20));border-color:rgba(125,183,255,.35);color:#fff;box-shadow:var(--glow);}
+.rhythm-card{border-radius:24px;padding:20px;margin-bottom:14px;}
+.beat-display{padding:24px 0 18px;}
+.beat-box{width:52px;height:52px;border-radius:16px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);font-size:23px;color:#FFF7EA;box-shadow:inset 0 1px 0 rgba(255,255,255,.08);}
+.beat-box.active{background:linear-gradient(135deg,#4777FF,#7DB7FF);border-color:rgba(255,255,255,.25);box-shadow:0 0 0 6px rgba(125,183,255,.13),0 18px 40px rgba(71,119,255,.24);}
+.beat-box.rest{color:rgba(246,241,231,.38);}
+.beat-num{color:rgba(246,241,231,.38);}
+.bar-sep{background:rgba(255,255,255,.16);}
+.tap-zone{
+  border-radius:24px;
+  padding:28px 20px;
+  background:linear-gradient(135deg,rgba(255,255,255,.105),rgba(125,183,255,.08));
+  border:1px dashed rgba(125,183,255,.35);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 18px 44px rgba(0,0,0,.22);
+}
+.tap-zone:hover{transform:translateY(-1px);border-color:rgba(125,183,255,.55);}
+.tap-zone.tapped{background:linear-gradient(135deg,rgba(125,183,255,.24),rgba(167,122,255,.16));box-shadow:0 0 0 7px rgba(125,183,255,.11),0 18px 44px rgba(71,119,255,.18);}
+.tap-lbl{color:rgba(246,241,231,.68);}
+.tap-fb{color:rgba(246,241,231,.60);}
+.tap-fb.ok{color:#78F0A9;}.tap-fb.ng{color:#FF8D95;}
+.r-actions{gap:10px;}
+#history-list > div{box-shadow:0 10px 28px rgba(0,0,0,.14);}
+@media (max-width:720px){
+  .nav{height:auto;min-height:64px;padding:10px 12px;gap:8px;flex-wrap:wrap;}
+  .nav-title{width:100%;font-size:20px;}
+  .nav-tab{height:36px;flex:1;justify-content:center;padding:0 .5rem;}
+  .page{padding:18px 12px 36px;}
+  .stats-row,.rhythm-score{grid-template-columns:repeat(2,1fr);display:grid;}
+  .note-buttons{grid-template-columns:repeat(7,minmax(42px,1fr));gap:6px;}
+  .note-btn{border-radius:14px;}
+  .note-btn .en{font-size:16px;}
+  .rhythm-header{display:block;}
+  .rhythm-title{font-size:26px;margin-bottom:12px;}
+  .bpm-ctl{justify-content:space-between;}
+  .rlvl-tabs{display:grid;grid-template-columns:1fr;}
+  .beat-box{width:46px;height:46px;}
+}
+
+</style>
+</head>
+<body>
+<nav class="nav">
+  <span class="nav-title">Music Trainer</span>
+  <div class="nav-tab active" id="tab-sight" onclick="showPage('sight')">SIGHT READING</div>
+  <div class="nav-tab" id="tab-rhythm" onclick="showPage('rhythm')">RHYTHM</div>
+  <div style="display:flex;align-items:center;gap:8px;margin-left:12px;">
+    <span style="font-size:11px;font-family:'DM Mono',monospace;color:#9A958F;letter-spacing:.05em;">AUTO</span>
+    <div id="auto-toggle" onclick="toggleAuto()" style="width:36px;height:20px;border-radius:10px;background:#6AA3E8;cursor:pointer;position:relative;transition:background .2s;">
+      <div id="auto-knob" style="width:16px;height:16px;border-radius:50%;background:#fff;position:absolute;top:2px;left:18px;transition:left .2s;"></div>
+    </div>
+  </div>
+</nav>
+
+<!-- SIGHT READING -->
+<div class="page active" id="page-sight">
+  <div class="stats-row">
+    <div class="stat"><div class="stat-num" id="s-correct">0</div><div class="stat-lbl">Correct</div></div>
+    <div class="stat"><div class="stat-num" id="s-total">0</div><div class="stat-lbl">Total</div></div>
+    <div class="stat"><div class="stat-num" id="s-streak">0</div><div class="stat-lbl">Streak</div></div>
+    <div class="stat"><div class="stat-num" id="s-acc">—</div><div class="stat-lbl">Accuracy</div></div>
+  </div>
+
+  <!-- clef tabs -->
+  <div class="settings-bar" style="margin-bottom:.75rem;">
+    <div class="stab active" id="ctab-both" onclick="setClefMode('both',this)">大・小 両方</div>
+    <div class="stab" id="ctab-treble" onclick="setClefMode('treble',this)">ト音記号</div>
+    <div class="stab" id="ctab-bass" onclick="setClefMode('bass',this)">ヘ音記号</div>
+  </div>
+
+  <!-- key sig panel -->
+  <div class="keysig-panel">
+    <div class="keysig-title">Key Signature — 調号（和名 / Major / Minor）</div>
+    <div class="keysig-row" id="keysig-row"></div>
+    <div class="keysig-tip-head">
+      <div class="keysig-tip-label">Tip mode — 調号の覚え方ヒント</div>
+      <button class="tip-toggle-btn" id="tip-toggle-btn" onclick="toggleKeyTip()">TIP OFF</button>
+    </div>
+    <div class="keysig-tip" id="keysig-tip"></div>
+  </div>
+
+  <div class="staff-card">
+    <div class="clef-badge"><span class="clef-dot"></span><span id="clef-label">TREBLE CLEF — ト音記号</span></div>
+    <svg class="staff" id="staff-svg" viewBox="0 -25 560 120" xmlns="http://www.w3.org/2000/svg"></svg>
+  </div>
+
+  <div class="feedback-bar wait" id="feedback">音名ボタンまたは鍵盤をタップ</div>
+
+  <!-- note name buttons -->
+  <div class="note-buttons" id="note-buttons">
+    <button class="note-btn" onclick="selectNote('C')"><span class="en">C</span><span class="jp">ド</span></button>
+    <button class="note-btn" onclick="selectNote('D')"><span class="en">D</span><span class="jp">レ</span></button>
+    <button class="note-btn" onclick="selectNote('E')"><span class="en">E</span><span class="jp">ミ</span></button>
+    <button class="note-btn" onclick="selectNote('F')"><span class="en">F</span><span class="jp">ファ</span></button>
+    <button class="note-btn" onclick="selectNote('G')"><span class="en">G</span><span class="jp">ソ</span></button>
+    <button class="note-btn" onclick="selectNote('A')"><span class="en">A</span><span class="jp">ラ</span></button>
+    <button class="note-btn" onclick="selectNote('B')"><span class="en">B</span><span class="jp">シ</span></button>
+  </div>
+
+  <!-- piano keyboard -->
+  <div class="keyboard-wrap" id="keyboard-wrap">
+    <div id="keyboard-html" style="position:relative;height:88px;user-select:none;"></div>
+  </div>
+
+  <button class="skip-btn" onclick="nextQuestion()">スキップ / Skip →</button>
+  <button class="next-btn" id="next-btn" onclick="nextQuestion()" style="display:none;width:100%;margin-top:8px;padding:11px;font-size:14px;font-family:'DM Mono',monospace;border:none;border-radius:10px;background:#1A1714;color:#F7F5F0;cursor:pointer;font-weight:500;">次へ / Next →</button>
+
+  <!-- history -->
+  <div style="margin-top:1rem;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+      <span style="font-size:11px;font-family:'DM Mono',monospace;color:#9A958F;letter-spacing:.06em;text-transform:uppercase;">History — 履歴</span>
+      <button onclick="clearHistory()" style="font-size:11px;font-family:'DM Mono',monospace;color:#9A958F;background:none;border:none;cursor:pointer;padding:0;">クリア</button>
+    </div>
+    <div id="history-list" style="display:flex;flex-direction:column;gap:4px;"></div>
+  </div>
+</div>
+
+<!-- RHYTHM -->
+<div class="page" id="page-rhythm">
+  <div class="rhythm-header">
+    <div class="rhythm-title">Rhythm Trainer</div>
+    <div class="bpm-ctl">
+      BPM <input type="range" min="40" max="180" value="80" oninput="setBpm(this.value)">
+      <span id="bpm-val">80</span>
+    </div>
+  </div>
+  <div class="rlvl-tabs">
+    <div class="rlvl active" onclick="setRhythmLevel('easy',this)">Easy — 4/4</div>
+    <div class="rlvl" onclick="setRhythmLevel('mid',this)">Mid — 3/4・シンコペ</div>
+    <div class="rlvl" onclick="setRhythmLevel('hard',this)">Hard — 複合拍子</div>
+  </div>
+  <div class="rhythm-score">
+    <div class="rscore"><div class="rscore-num" id="r-att">0</div><div class="rscore-lbl">Attempts</div></div>
+    <div class="rscore"><div class="rscore-num" id="r-prf">0</div><div class="rscore-lbl">Perfect</div></div>
+    <div class="rscore"><div class="rscore-num" id="r-cls">0</div><div class="rscore-lbl">Close</div></div>
+    <div class="rscore"><div class="rscore-num" id="r-mss">0</div><div class="rscore-lbl">Miss</div></div>
+  </div>
+  <div class="rhythm-card">
+    <div class="pattern-label" id="pat-label">PATTERN: 4/4 QUARTER NOTES</div>
+    <div class="beat-display" id="beat-display"></div>
+  </div>
+  <div class="tap-zone" id="tap-zone" onmousedown="tapBeat()" ontouchstart="tapBeat(event)">
+    <div style="font-size:26px;margin-bottom:4px;">🥁</div>
+    <div class="tap-lbl">TAP HERE — タップしてリズムを叩く</div>
+  </div>
+  <div class="tap-fb" id="tap-fb">▶ 再生してからタップしてください</div>
+  <div class="r-actions">
+    <button class="btn-new" onclick="newRhythm()">新しいパターン</button>
+    <button class="btn-play" id="btn-play" onclick="togglePlay()">▶ 再生</button>
+  </div>
+</div>
+
+<script>
+// ==================== SIGHT READING ====================
+const NOTE_JP={C:'ド',D:'レ',E:'ミ',F:'ファ',G:'ソ',A:'ラ',B:'シ'};
+const NOTES=['C','D','E','F','G','A','B'];
+
+// Key signatures: sharps/flats per key
+const KEY_SIGS=[
+  {jp:'ハ長調',major:'C major',minor:'A minor',label:'C / Am',sharps:[],flats:[]},
+  {jp:'ト長調',major:'G major',minor:'E minor',label:'G / Em',sharps:['F'],flats:[]},
+  {jp:'ニ長調',major:'D major',minor:'B minor',label:'D / Bm',sharps:['F','C'],flats:[]},
+  {jp:'イ長調',major:'A major',minor:'F# minor',label:'A / F#m',sharps:['F','C','G'],flats:[]},
+  {jp:'ホ長調',major:'E major',minor:'C# minor',label:'E / C#m',sharps:['F','C','G','D'],flats:[]},
+  {jp:'ロ長調',major:'B major',minor:'G# minor',label:'B / G#m',sharps:['F','C','G','D','A'],flats:[]},
+  {jp:'嬰ヘ長調',major:'F# major',minor:'D# minor',label:'F# / D#m',sharps:['F','C','G','D','A','E'],flats:[]},
+  {jp:'嬰ハ長調',major:'C# major',minor:'A# minor',label:'C# / A#m',sharps:['F','C','G','D','A','E','B'],flats:[]},
+  {jp:'ヘ長調',major:'F major',minor:'D minor',label:'F / Dm',sharps:[],flats:['B']},
+  {jp:'変ロ長調',major:'Bb major',minor:'G minor',label:'Bb / Gm',sharps:[],flats:['B','E']},
+  {jp:'変ホ長調',major:'Eb major',minor:'C minor',label:'Eb / Cm',sharps:[],flats:['B','E','A']},
+  {jp:'変イ長調',major:'Ab major',minor:'F minor',label:'Ab / Fm',sharps:[],flats:['B','E','A','D']},
+  {jp:'変ニ長調',major:'Db major',minor:'Bb minor',label:'Db / Bbm',sharps:[],flats:['B','E','A','D','G']},
+  {jp:'変ト長調',major:'Gb major',minor:'Eb minor',label:'Gb / Ebm',sharps:[],flats:['B','E','A','D','G','C']},
+  {jp:'変ハ長調',major:'Cb major',minor:'Ab minor',label:'Cb / Abm',sharps:[],flats:['B','E','A','D','G','C','F']},
+];
+const DEFAULT_KEY_INDEX=0;
+
+// Treble: s=0→E4 (1st line). Each step = 1 diatonic step up.
+// Lines E4(0),G4(2),B4(4),D5(6),F5(8); Spaces F4(1),A4(3),C5(5),E5(7)
+const TREBLE_MAP=[
+  {n:'C',o:4,s:-2},{n:'D',o:4,s:-1},
+  {n:'E',o:4,s:0},{n:'F',o:4,s:1},{n:'G',o:4,s:2},{n:'A',o:4,s:3},{n:'B',o:4,s:4},
+  {n:'C',o:5,s:5},{n:'D',o:5,s:6},{n:'E',o:5,s:7},{n:'F',o:5,s:8},
+  {n:'G',o:5,s:9},{n:'A',o:5,s:10},{n:'B',o:5,s:11},{n:'C',o:6,s:12},
+  {n:'B',o:3,s:-3},{n:'A',o:3,s:-4},{n:'G',o:3,s:-5},{n:'F',o:3,s:-6},{n:'E',o:3,s:-7},
+];
+// Bass: s=0→G2 (1st line). Lines G2(0),B2(2),D3(4),F3(6),A3(8)
+const BASS_MAP=[
+  {n:'G',o:2,s:0},{n:'A',o:2,s:1},{n:'B',o:2,s:2},{n:'C',o:3,s:3},{n:'D',o:3,s:4},
+  {n:'E',o:3,s:5},{n:'F',o:3,s:6},{n:'G',o:3,s:7},{n:'A',o:3,s:8},{n:'B',o:3,s:9},
+  {n:'C',o:4,s:10},{n:'D',o:4,s:11},
+  {n:'F',o:2,s:-1},{n:'E',o:2,s:-2},{n:'D',o:2,s:-3},{n:'C',o:2,s:-4},
+  {n:'B',o:1,s:-5},{n:'A',o:1,s:-6},{n:'G',o:1,s:-7},
+];
+
+const TREBLE_POOL=[
+  {n:'C',o:4},{n:'D',o:4},{n:'E',o:4},{n:'F',o:4},{n:'G',o:4},{n:'A',o:4},{n:'B',o:4},
+  {n:'C',o:5},{n:'D',o:5},{n:'E',o:5},{n:'F',o:5},{n:'G',o:5},{n:'A',o:5},{n:'B',o:5},{n:'C',o:6},
+  {n:'B',o:3},{n:'A',o:3},{n:'G',o:3},{n:'F',o:3},{n:'E',o:3},
+];
+const BASS_POOL=[
+  {n:'G',o:2},{n:'A',o:2},{n:'B',o:2},{n:'C',o:3},{n:'D',o:3},{n:'E',o:3},{n:'F',o:3},
+  {n:'G',o:3},{n:'A',o:3},{n:'B',o:3},{n:'C',o:4},{n:'D',o:4},
+  {n:'F',o:2},{n:'E',o:2},{n:'D',o:2},{n:'C',o:2},{n:'B',o:1},
+];
+
+let clefMode='both',currentClef='treble',currentNote=null,answered=false;
+let selectedKeySig=KEY_SIGS[DEFAULT_KEY_INDEX];
+let stats={correct:0,total:0,streak:0};
+let autoAdvance=true;
+let autoTimer=null;
+let history=[];
+let keyTipMode=false;
+
+function toggleAuto(){
+  autoAdvance=!autoAdvance;
+  const tog=document.getElementById('auto-toggle');
+  const knob=document.getElementById('auto-knob');
+  tog.style.background=autoAdvance?'#6AA3E8':'#9A958F';
+  knob.style.left=autoAdvance?'18px':'2px';
+  document.getElementById('next-btn').style.display='none';
+  if(autoAdvance&&answered){ clearTimeout(autoTimer); nextQuestion(); }
+}
+
+function toggleKeyTip(){
+  keyTipMode=!keyTipMode;
+  updateKeyTip();
+}
+
+function noteLabel(note,mode='natural'){
+  if(mode==='sharp') return `${note}♯`;
+  if(mode==='flat') return `${note}♭`;
+  return note;
+}
+
+function getTipMemoryText(ks){
+  if(ks.sharps.length>0){
+    return `♯の順番は「ファ → ド → ソ → レ → ラ → ミ → シ」。この調では ${ks.sharps.join(' → ')} までに♯が付きます。`;
+  }
+  if(ks.flats.length>0){
+    return `♭の順番は「シ → ミ → ラ → レ → ソ → ド → ファ」。この調では ${ks.flats.join(' → ')} までに♭が付きます。`;
+  }
+  return 'ハ長調 / イ短調は調号なし。まずは「全部そのままの白鍵」から覚える基準調です。';
+}
+
+function updateKeyTip(){
+  const box=document.getElementById('keysig-tip');
+  const btn=document.getElementById('tip-toggle-btn');
+  if(!box||!btn) return;
+  btn.textContent=keyTipMode?'TIP ON':'TIP OFF';
+  btn.classList.toggle('active',keyTipMode);
+  box.classList.toggle('show',keyTipMode);
+  if(!keyTipMode){
+    box.innerHTML='';
+    return;
+  }
+
+  const ks=selectedKeySig;
+  const affected=ks.sharps.length>0
+    ? ks.sharps.map(n=>({base:n,label:`${n} → ${n}♯`,type:'sharp'}))
+    : ks.flats.length>0
+      ? ks.flats.map(n=>({base:n,label:`${n} → ${n}♭`,type:'flat'}))
+      : [];
+  const naturals=NOTES.filter(n=>!ks.sharps.includes(n)&&!ks.flats.includes(n));
+  const memoryText=getTipMemoryText(ks);
+  const quickHint=ks.sharps.length>0
+    ? `「${ks.sharps[ks.sharps.length-1]}まで♯」と覚えると早いです。`
+    : ks.flats.length>0
+      ? `「${ks.flats[ks.flats.length-1]}まで♭」と覚えると早いです。`
+      : '調号なしなので、全部ナチュラルのままです。';
+
+  const affectedHtml=affected.length
+    ? affected.map(x=>`<span class="tip-chip aff">${x.label}</span>`).join('')
+    : '<span class="tip-chip aff">なし</span>';
+  const naturalHtml=naturals.map(n=>`<span class="tip-chip nat">${n} のまま</span>`).join('');
+  const mnemonicHtml=(ks.sharps.length>0
+    ? ['ファ','ド','ソ','レ','ラ','ミ','シ'].map((n,i)=>`<span class="tip-chip mem ${i<ks.sharps.length?'mem-on':'mem-off'}">${i<ks.sharps.length?'✓ ':''}${n}</span>`).join('')
+    : ks.flats.length>0
+      ? ['シ','ミ','ラ','レ','ソ','ド','ファ'].map((n,i)=>`<span class="tip-chip mem ${i<ks.flats.length?'mem-on':'mem-off'}">${i<ks.flats.length?'✓ ':''}${n}</span>`).join('')
+      : '<span class="tip-chip mem mem-off">基準調</span><span class="tip-chip mem mem-off">全部そのまま</span>');
+
+  box.innerHTML=`
+    <div class="tip-title">${ks.jp} / ${ks.major} / ${ks.minor}</div>
+    <div class="tip-copy">${memoryText}</div>
+    <div class="tip-grid">
+      <div class="tip-card">
+        <div class="tip-card-title">Accidentals — 調号が付く音</div>
+        <div class="tip-chip-row">${affectedHtml}</div>
+        <div class="tip-note">${quickHint}</div>
+      </div>
+      <div class="tip-card">
+        <div class="tip-card-title">Natural — 付かない音 / 白鍵のまま</div>
+        <div class="tip-chip-row">${naturalHtml}</div>
+        <div class="tip-note">数えるより「何がそのまま残るか」で見ると覚えやすいです。</div>
+      </div>
+      <div class="tip-card" style="grid-column:1 / -1;">
+        <div class="tip-card-title">Mnemonic — 覚え方</div>
+        <div class="tip-chip-row">${mnemonicHtml}</div>
+        <div class="tip-note">シャープ系は「ファドソレラミシ」、フラット系は「シミラレソドファ」の並びで増えていきます。</div>
+      </div>
+    </div>`;
+}
+
+// Build key sig buttons
+function buildKeySigUI(){
+  const row=document.getElementById('keysig-row');
+  row.innerHTML='';
+  KEY_SIGS.forEach((ks,i)=>{
+    const b=document.createElement('button');
+    b.className='ks-btn'+(i===DEFAULT_KEY_INDEX?' active':'');
+    b.innerHTML=`<span class="ks-jp">${ks.jp}</span><span class="ks-major">${ks.major}</span><span class="ks-minor">${ks.minor}</span>`;
+    b.onclick=()=>{
+      selectedKeySig=ks;
+      document.querySelectorAll('.ks-btn').forEach(x=>x.classList.remove('active'));
+      b.classList.add('active');
+      nextQuestion();
+      updateKeyTip();
+    };
+    row.appendChild(b);
+  });
+}
+
+function showPage(p){
+  document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(x=>x.classList.remove('active'));
+  document.getElementById('page-'+p).classList.add('active');
+  document.getElementById('tab-'+p).classList.add('active');
+}
+
+function setClefMode(m,el){
+  clefMode=m;
+  document.querySelectorAll('[id^=ctab-]').forEach(x=>x.classList.remove('active'));
+  el.classList.add('active');
+  nextQuestion();
+}
+
+function getNoteY(note,clef,topLineY,ls){
+  const map=clef==='treble'?TREBLE_MAP:BASS_MAP;
+  const found=map.find(r=>r.n===note.n&&r.o===note.o);
+  if(!found)return topLineY+2*ls;
+  // s=0 → E4 = 1st line (bottom) = topLineY+4*ls
+  // each step up: y decreases by ls/2
+  return (topLineY+4*ls) - found.s*(ls/2);
+}
+
+function nextQuestion(){
+  clearTimeout(autoTimer);
+  reviewingIdx=null;
+  answered=false;
+  document.getElementById('next-btn').style.display='none';
+  if(clefMode==='treble') currentClef='treble';
+  else if(clefMode==='bass') currentClef='bass';
+  else currentClef=Math.random()<.5?'treble':'bass';
+  const pool=currentClef==='treble'?TREBLE_POOL:BASS_POOL;
+  currentNote=pool[Math.floor(Math.random()*pool.length)];
+  document.querySelectorAll('.note-btn').forEach(b=>{
+    b.classList.remove('correct','wrong');
+    const en=b.querySelector('.en').textContent;
+    b.querySelector('.jp').textContent=NOTE_JP[en];
+  });
+  const fb=document.getElementById('feedback');
+  fb.textContent='音名ボタンまたは鍵盤をタップ';
+  fb.className='feedback-bar wait';
+  renderStaff();
+  renderKeyboard(null);
+  const clefJP=currentClef==='treble'?'ト音記号':'ヘ音記号';
+  document.getElementById('clef-label').textContent=(currentClef==='treble'?'TREBLE CLEF':'BASS CLEF')+' — '+clefJP;
+  updateKeyTip();
+}
+
+function selectNote(n,displayLabel=n){
+  if(answered) return;
+  answered=true;
+  stats.total++;
+  const correct=n===currentNote.n;
+  const jp=NOTE_JP[currentNote.n];
+  const fb=document.getElementById('feedback');
+  if(correct){
+    stats.correct++;stats.streak++;
+    fb.textContent=`✓ 正解！ ${currentNote.n} — ${jp}`;
+    fb.className='feedback-bar ok';
+  } else {
+    stats.streak=0;
+    fb.textContent=`✗ 不正解 → 正解: ${currentNote.n} — ${jp}`;
+    fb.className='feedback-bar ng';
+  }
+  // highlight buttons + show octave on correct button
+  document.querySelectorAll('.note-btn').forEach(b=>{
+    const en=b.querySelector('.en').textContent;
+    if(en===n&&!correct) b.classList.add('wrong');
+    if(en===currentNote.n){
+      b.classList.add('correct');
+      b.querySelector('.jp').textContent=NOTE_JP[currentNote.n]+' '+currentNote.o;
+    }
+  });
+  renderKeyboard(currentNote);
+  updateStats();
+  // push history
+  history.unshift({note:currentNote.n,oct:currentNote.o,jp:jp,clef:currentClef,correct,answered:n,answeredLabel:displayLabel,keySig:selectedKeySig});
+  if(history.length>10) history.pop();
+  renderHistory();
+  const nextBtn=document.getElementById('next-btn');
+  if(autoAdvance){
+    nextBtn.style.display='none';
+    autoTimer=setTimeout(()=>{ if(answered&&reviewingIdx===null) nextQuestion(); },1200);
+  } else {
+    nextBtn.style.display='block';
+  }
+}
+
+let reviewingIdx=null;
+
+function reviewHistory(i){
+  const h=history[i];
+  if(!h) return;
+  // Toggle: tap same row again → exit review
+  if(reviewingIdx===i){
+    reviewingIdx=null;
+    renderHistory();
+    renderStaff();
+    renderKeyboard(answered?currentNote:null);
+    const fb=document.getElementById('feedback');
+    if(!answered){ fb.textContent='音名ボタンまたは鍵盤をタップ'; fb.className='feedback-bar wait'; }
+    document.getElementById('clef-label').textContent=
+      (currentClef==='treble'?'TREBLE CLEF':'BASS CLEF')+' — '+(currentClef==='treble'?'ト音記号':'ヘ音記号');
+    return;
+  }
+  // Stop auto-advance while reviewing
+  clearTimeout(autoTimer);
+  reviewingIdx=i;
+  renderHistory();
+
+  // Save globals, override for render
+  const savedClef=currentClef, savedNote=currentNote, savedKeySig=selectedKeySig;
+  currentClef=h.clef;
+  currentNote={n:h.note,o:h.oct};
+  selectedKeySig=h.keySig;
+
+  document.getElementById('clef-label').textContent=
+    (h.clef==='treble'?'TREBLE CLEF':'BASS CLEF')+' — '+(h.clef==='treble'?'ト音記号':'ヘ音記号')+' 【履歴 '+(i+1)+'】';
+  renderStaff();
+  renderKeyboard({n:h.note,o:h.oct});
+
+  const fb=document.getElementById('feedback');
+  if(h.correct){
+    fb.textContent=`✓ ${h.note}${h.oct} — ${h.jp}`;
+    fb.className='feedback-bar ok';
+  } else {
+    fb.textContent=`✗ 正解: ${h.note}${h.oct} — ${h.jp}　選択: ${h.answeredLabel||h.answered}`;
+    fb.className='feedback-bar ng';
+  }
+  document.querySelectorAll('.note-btn').forEach(b=>{
+    b.classList.remove('correct','wrong');
+    const en=b.querySelector('.en').textContent;
+    if(en===h.answered&&!h.correct) b.classList.add('wrong');
+    if(en===h.note){
+      b.classList.add('correct');
+      b.querySelector('.jp').textContent=NOTE_JP[h.note]+' '+h.oct;
+    }
+  });
+
+  // Restore globals (render is done, globals must not stay overridden)
+  currentClef=savedClef;
+  currentNote=savedNote;
+  selectedKeySig=savedKeySig;
+
+  // Show "次へ" so user can manually advance when done reviewing
+  if(answered){
+    document.getElementById('next-btn').style.display='block';
+  }
+}
+
+function renderHistory(){
+  const list=document.getElementById('history-list');
+  list.innerHTML='';
+  if(history.length===0){
+    list.innerHTML='<div style="font-size:12px;font-family:\'DM Mono\',monospace;color:#C0BAB2;padding:8px 0;">まだ回答がありません</div>';
+    return;
+  }
+  history.forEach((h,i)=>{
+    const isReviewing=reviewingIdx===i;
+    const bg=isReviewing?'#FFF8E8':h.correct?'#EAF3DE':'#FDEAEA';
+    const border=isReviewing?'#E0A020':h.correct?'#A0CC78':'#F0A0A0';
+    const icon=h.correct?'✓':'✗';
+    const iconColor=h.correct?'#3B7A1A':'#B83030';
+    const clefLabel=h.clef==='treble'?'T':'B';
+    const clefColor=h.clef==='treble'?'#2D5FA3':'#7A3AB8';
+    const row=document.createElement('div');
+    row.style.cssText=`display:flex;align-items:center;gap:8px;padding:7px 10px;`
+      +`background:${bg};border:.5px solid ${border};border-radius:7px;font-family:'DM Mono',monospace;`
+      +`cursor:pointer;transition:opacity .1s;`;
+    row.title='タップして五線・鍵盤を確認';
+    row.onclick=()=>reviewHistory(i);
+
+    const idx=document.createElement('span');
+    idx.style.cssText=`font-size:10px;color:#9A958F;min-width:16px;`;
+    idx.textContent=i+1;
+
+    const cb=document.createElement('span');
+    cb.style.cssText=`font-size:10px;font-weight:500;padding:1px 5px;border-radius:4px;background:${clefColor}22;color:${clefColor};`;
+    cb.textContent=clefLabel;
+
+    const note=document.createElement('span');
+    note.style.cssText=`font-size:14px;font-weight:500;color:#1A1714;min-width:36px;`;
+    note.textContent=h.note+h.oct;
+
+    const jp=document.createElement('span');
+    jp.style.cssText=`font-size:12px;color:#5A5550;flex:1;`;
+    jp.textContent=h.jp;
+
+    if(!h.correct){
+      const wr=document.createElement('span');
+      wr.style.cssText=`font-size:11px;color:#B83030;`;
+      wr.textContent=`選択: ${h.answeredLabel||h.answered}`;
+      row.appendChild(idx);row.appendChild(cb);row.appendChild(note);row.appendChild(jp);row.appendChild(wr);
+    } else {
+      row.appendChild(idx);row.appendChild(cb);row.appendChild(note);row.appendChild(jp);
+    }
+
+    const ic=document.createElement('span');
+    ic.style.cssText=`font-size:13px;font-weight:500;color:${iconColor};`;
+    ic.textContent=isReviewing?'👁':icon;
+    row.appendChild(ic);
+
+    list.appendChild(row);
+  });
+}
+
+function clearHistory(){
+  history=[];
+  renderHistory();
+}
+
+function updateStats(){
+  document.getElementById('s-correct').textContent=stats.correct;
+  document.getElementById('s-total').textContent=stats.total;
+  document.getElementById('s-streak').textContent=stats.streak;
+  document.getElementById('s-acc').textContent=stats.total>0?Math.round(stats.correct/stats.total*100)+'%':'—';
+}
+
+// ---- Staff rendering ----
+function renderStaff(){
+  const svg=document.getElementById('staff-svg');
+  svg.innerHTML='';
+  // Coordinate design:
+  // topLineY=10 = 5th line (F5, top)
+  // Lines at y=10,20,30,40,50 (ls=10)
+  // Spaces between: 15,25,35,45
+  // 1st line(E4)=y50, 2nd(G4)=y40, 3rd(B4)=y30, 4th(D5)=y20, 5th(F5)=y10
+  // getNoteY: s=0→y=50, each step up → y-5
+  const ls=10, topLineY=10;
+  const accidentalCount=Math.max(selectedKeySig.sharps.length,selectedKeySig.flats.length);
+  const noteX=300 + Math.max(0, accidentalCount-4)*18;
+  const sc='#1A1714',nc='#2D5FA3',lc='#5A5550';
+
+  for(let i=0;i<5;i++){
+    const y=topLineY+i*ls;
+    el('line',{x1:44,x2:540,y1:y,y2:y,stroke:sc,'stroke-width':.8},svg);
+  }
+
+  if(currentClef==='treble'){
+    txt('𝄞',{x:6,y:52,'font-size':56,fill:sc,'font-family':'serif'},svg);
+  } else {
+    // 𝄢: the glyph's F-dot sits on F3 line = y=20
+    // At font-size 28, the glyph spans ~2 staff spaces vertically
+    // Baseline offset: the dot row is roughly at 0.3em from top of glyph
+    // y = F3_y + (baseline_to_dot_offset) = 20 + 18 = 38
+    txt('𝄢',{x:6,y:42,'font-size':48,fill:sc,'font-family':'serif'},svg);
+  }
+
+  // key signature accidentals — use the standard left-to-right accumulation pattern used in printed scores.
+  const ks=selectedKeySig;
+  const KEYSIG_POSITIONS={
+    treble:{
+      sharps:[
+        {n:'F',o:5},{n:'C',o:5},{n:'G',o:5},{n:'D',o:5},{n:'A',o:4},{n:'E',o:5},{n:'B',o:4}
+      ],
+      flats:[
+        {n:'B',o:4},{n:'E',o:5},{n:'A',o:4},{n:'D',o:5},{n:'G',o:4},{n:'C',o:5},{n:'F',o:4}
+      ]
+    },
+    bass:{
+      sharps:[
+        {n:'F',o:3},{n:'C',o:3},{n:'G',o:3},{n:'D',o:3},{n:'A',o:2},{n:'E',o:3},{n:'B',o:2}
+      ],
+      flats:[
+        {n:'B',o:2},{n:'E',o:3},{n:'A',o:2},{n:'D',o:3},{n:'G',o:2},{n:'C',o:3},{n:'F',o:2}
+      ]
+    }
+  };
+
+  function drawAccidental(symbol,x,y){
+    const e=txt(symbol,{x:x,y:y,'font-size':24,fill:'#181512','font-family':'"Noto Sans JP",serif','font-weight':'700'},svg);
+    e.setAttribute('paint-order','stroke');
+    e.setAttribute('stroke','#FFFFFF');
+    e.setAttribute('stroke-width','0.55');
+    e.setAttribute('stroke-linejoin','round');
+    return e;
+  }
+
+  const posSet=KEYSIG_POSITIONS[currentClef];
+  let kx=44;
+  if(ks.sharps.length>0){
+    ks.sharps.forEach((_,i)=>{
+      const p=posSet.sharps[i];
+      if(p){
+        const py=getNoteY(p,currentClef,topLineY,ls);
+        drawAccidental('♯',kx,py+8);
+      }
+      kx+=16;
+    });
+  }
+  if(ks.flats.length>0){
+    ks.flats.forEach((_,i)=>{
+      const p=posSet.flats[i];
+      if(p){
+        const py=getNoteY(p,currentClef,topLineY,ls);
+        drawAccidental('♭',kx,py+8);
+      }
+      kx+=16;
+    });
+  }
+
+  const noteY=getNoteY(currentNote,currentClef,topLineY,ls);
+  const bottomLine=topLineY+4*ls; // y=50 = 1st line
+  const lw=26;
+
+  // Helper: draw ledger lines between staff edge and note (every ls step = full line interval)
+  // Above staff: topLineY=10, ledger lines at y=0,-10,-20...
+  if(noteY < topLineY){
+    for(let y=topLineY-ls; y>=noteY-ls/2; y-=ls){
+      el('line',{x1:noteX-lw/2,x2:noteX+lw/2,y1:y,y2:y,stroke:lc,'stroke-width':1},svg);
+    }
+  }
+  // Below staff: bottomLine=50, ledger lines at y=60,70,80...
+  if(noteY > bottomLine){
+    for(let y=bottomLine+ls; y<=noteY+ls/2; y+=ls){
+      el('line',{x1:noteX-lw/2,x2:noteX+lw/2,y1:y,y2:y,stroke:lc,'stroke-width':1},svg);
+    }
+  }
+  // Middle C always gets its own ledger line (C4: below treble / above bass staff)
+  const midCCheck=(currentClef==='treble'&&currentNote.n==='C'&&currentNote.o===4)||(currentClef==='bass'&&currentNote.n==='C'&&currentNote.o===4);
+  if(midCCheck){
+    const mcy=getNoteY({n:'C',o:4},currentClef,topLineY,ls);
+    el('line',{x1:noteX-lw/2,x2:noteX+lw/2,y1:mcy,y2:mcy,stroke:lc,'stroke-width':1},svg);
+  }
+
+  // note head
+  const ne=document.createElementNS('http://www.w3.org/2000/svg','ellipse');
+  ne.setAttribute('cx',noteX);ne.setAttribute('cy',noteY);
+  ne.setAttribute('rx','8');ne.setAttribute('ry','6');
+  ne.setAttribute('fill',nc);
+  ne.setAttribute('transform',`rotate(-15,${noteX},${noteY})`);
+  svg.appendChild(ne);
+
+  // stem
+  const midLineY=topLineY+2*ls; // y=30 = B4 (3rd line)
+  const stemUp=noteY>midLineY;
+  const sx=stemUp?noteX+7:noteX-7;
+  el('line',{x1:sx,x2:sx,y1:noteY,y2:stemUp?noteY-30:noteY+30,stroke:nc,'stroke-width':1.5},svg);
+}
+
+function el(tag,attrs,parent){
+  const e=document.createElementNS('http://www.w3.org/2000/svg',tag);
+  Object.entries(attrs).forEach(([k,v])=>e.setAttribute(k,v));
+  parent.appendChild(e);return e;
+}
+function txt(content,attrs,parent){
+  const e=document.createElementNS('http://www.w3.org/2000/svg','text');
+  Object.entries(attrs).forEach(([k,v])=>e.setAttribute(k,v));
+  e.textContent=content;parent.appendChild(e);return e;
+}
+
+// ---- Keyboard rendering (HTML div-based, C2-B6, scrollable) ----
+const WHITE_NOTES=['C','D','E','F','G','A','B'];
+const BLACK_KEYS=[
+  {li:0,sharpBase:'C',flatBase:'D'},
+  {li:1,sharpBase:'D',flatBase:'E'},
+  {li:3,sharpBase:'F',flatBase:'G'},
+  {li:4,sharpBase:'G',flatBase:'A'},
+  {li:5,sharpBase:'A',flatBase:'B'}
+];
+
+function renderKeyboard(answerNote){
+  const wrap=document.getElementById('keyboard-html');
+  wrap.innerHTML='';
+  const octaves=[2,3,4,5,6];
+  const WW=28, WH=82, BW=17, BH=52;
+  const totalW=octaves.length*7*WW;
+  wrap.style.width=totalW+'px';
+  wrap.style.height=(WH+6)+'px';
+  wrap.style.position='relative';
+
+  const ks=selectedKeySig;
+  let answerDiv=null;
+
+  // White keys
+  octaves.forEach((oct,oi)=>{
+    WHITE_NOTES.forEach((n,ni)=>{
+      const x=(oi*7+ni)*WW;
+      const isAns=answerNote&&n===answerNote.n&&oct===answerNote.o&&!ks.sharps.includes(n)&&!ks.flats.includes(n);
+      const d=document.createElement('div');
+      d.id='key-w-'+n+oct;
+      d.style.cssText=`position:absolute;left:${x}px;top:0;width:${WW-1}px;height:${WH}px;`
+        +`background:${isAns?'#B5D4F4':'#FAFAF8'};`
+        +`border:1px solid ${isAns?'#2D5FA3':'#C8C3BB'};`
+        +`border-radius:0 0 4px 4px;cursor:pointer;box-sizing:border-box;`
+        +`display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding-bottom:5px;`;
+      if(n==='C'&&oct===4){
+        const dot=document.createElement('div');
+        dot.style.cssText=`width:5px;height:5px;border-radius:50%;background:${isAns?'#2D5FA3':'#CCC'};margin-bottom:3px;flex-shrink:0;`;
+        d.appendChild(dot);
+      }
+      const lbl=document.createElement('span');
+      lbl.style.cssText=`font-size:8px;font-family:'DM Mono',monospace;color:${isAns?'#185FA5':'#CCC'};line-height:1;flex-shrink:0;`;
+      lbl.textContent=n+oct;
+      d.appendChild(lbl);
+      d.addEventListener('mousedown',e=>{e.preventDefault();selectNote(n);});
+      d.addEventListener('touchstart',e=>{e.preventDefault();selectNote(n);},{passive:false});
+      wrap.appendChild(d);
+      if(isAns) answerDiv=d;
+    });
+  });
+
+  // Black keys (z-index:2 on top of white)
+  octaves.forEach((oct,oi)=>{
+    BLACK_KEYS.forEach(bk=>{
+      const x=(oi*7+bk.li)*WW+WW-BW/2;
+      const useSharp = ks.sharps.includes(bk.sharpBase);
+      const useFlat = ks.flats.includes(bk.flatBase);
+      const keyLabel = useFlat ? `${bk.flatBase}♭` : `${bk.sharpBase}#`;
+      const selectValue = useFlat ? bk.flatBase : (useSharp ? bk.sharpBase : bk.sharpBase+'#');
+      const displayValue = keyLabel;
+      const isAns=answerNote&&answerNote.o===oct&&(
+        (useSharp&&answerNote.n===bk.sharpBase) ||
+        (useFlat&&answerNote.n===bk.flatBase)
+      );
+      const d=document.createElement('div');
+      d.id='key-b-'+bk.sharpBase+oct;
+      d.style.cssText=`position:absolute;left:${x}px;top:0;width:${BW}px;height:${BH}px;`
+        +`background:${isAns?'#2D5FA3':'#2A2520'};`
+        +`border-radius:0 0 4px 4px;cursor:pointer;z-index:2;`
+        +`display:flex;align-items:flex-end;justify-content:center;padding-bottom:4px;box-sizing:border-box;`;
+      const lbl=document.createElement('span');
+      lbl.style.cssText=`font-size:7px;font-family:'DM Mono',monospace;color:${isAns?'#fff':'#666'};line-height:1;`;
+      lbl.textContent=keyLabel;
+      d.appendChild(lbl);
+      d.addEventListener('mousedown',e=>{e.preventDefault();selectNote(selectValue,displayValue);});
+      d.addEventListener('touchstart',e=>{e.preventDefault();selectNote(selectValue,displayValue);},{passive:false});
+      wrap.appendChild(d);
+      if(isAns) answerDiv=d;
+    });
+  });
+
+  // Auto-scroll to answer key
+  if(answerDiv){
+    const wrapEl=document.getElementById('keyboard-wrap');
+    const keyLeft=parseInt(answerDiv.style.left)||0;
+    const keyW=parseInt(answerDiv.style.width)||WW;
+    const wrapW=wrapEl.clientWidth;
+    // Center the key in the visible area
+    wrapEl.scrollLeft=keyLeft - wrapW/2 + keyW/2;
+  } else {
+    // Default: scroll to C4
+    const wrapEl=document.getElementById('keyboard-wrap');
+    const c4x=(octaves.indexOf(4)*7)*WW;
+    wrapEl.scrollLeft=c4x - wrapEl.clientWidth/2 + WW*3;
+  }
+}
+
+// ==================== RHYTHM ====================
+let bpm=80,rhythmLevel='easy',isPlaying=false;
+let rhythmPattern={},currentBeat=-1,playTmr=null;
+let tapTimes=[],expectedTimes=[],playStart=0;
+let rS={att:0,prf:0,cls:0,mss:0};
+
+const RPATTERNS={
+  easy:[
+    {label:'4/4 — Quarter notes',beats:[1,1,1,1],sym:['♩','♩','♩','♩']},
+    {label:'4/4 — Half + quarters',beats:[2,1,1],sym:['𝅗𝅥','♩','♩']},
+    {label:'4/4 — Whole note',beats:[4],sym:['𝅝']},
+    {label:'4/4 — Quarter rest',beats:[1,'r',1,1],sym:['♩','𝄽','♩','♩']},
+  ],
+  mid:[
+    {label:'3/4 — Waltz',beats:[1,1,1],sym:['♩','♩','♩']},
+    {label:'4/4 — Syncopation',beats:[1,2,1],sym:['♩','♩.','♩']},
+    {label:'3/4 — Dotted half',beats:[3],sym:['𝅗𝅥.']},
+    {label:'4/4 — Eighth pairs',beats:[.5,.5,1,1,1],sym:['♪','♪','♩','♩','♩']},
+  ],
+  hard:[
+    {label:'5/4 — 3+2',beats:[1,1,1,1,1],sym:['♩','♩','♩','♩','♩']},
+    {label:'6/8 — Compound',beats:[.33,.33,.33,.33,.33,.33],sym:['♪','♪','♪','♪','♪','♪']},
+    {label:'7/8 — 2+2+3',beats:[1,1,1,1,1,1,1],sym:['♪','♪','♪','♪','♪','♪','♪']},
+    {label:'4/4 — Sixteenth burst',beats:[.25,.25,.25,.25,1,1,1],sym:['♬','♬','♬','♬','♩','♩','♩']},
+  ]
+};
+
+function setBpm(v){bpm=parseInt(v);document.getElementById('bpm-val').textContent=v;}
+function setRhythmLevel(l,el){
+  rhythmLevel=l;
+  document.querySelectorAll('.rlvl').forEach(x=>x.classList.remove('active'));
+  el.classList.add('active');
+  newRhythm();
+}
+function newRhythm(){
+  if(isPlaying)stopPlay();
+  const pool=RPATTERNS[rhythmLevel];
+  rhythmPattern=pool[Math.floor(Math.random()*pool.length)];
+  document.getElementById('pat-label').textContent='PATTERN: '+rhythmPattern.label;
+  renderBeats();
+  tapTimes=[];
+  document.getElementById('tap-fb').textContent='▶ 再生してからタップしてください';
+  document.getElementById('tap-fb').className='tap-fb';
+}
+function renderBeats(){
+  const c=document.getElementById('beat-display');c.innerHTML='';
+  rhythmPattern.beats.forEach((b,i)=>{
+    const cell=document.createElement('div');cell.className='beat-cell';
+    const box=document.createElement('div');
+    box.className='beat-box'+(b==='r'?' rest':'');
+    box.id='beat-'+i;box.textContent=rhythmPattern.sym[i]||'♩';
+    const num=document.createElement('div');num.className='beat-num';num.textContent=i+1;
+    cell.appendChild(box);cell.appendChild(num);c.appendChild(cell);
+    if(i<rhythmPattern.beats.length-1){const s=document.createElement('div');s.className='bar-sep';c.appendChild(s);}
+  });
+}
+let audioCtx=null;
+function getAudio(){if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();return audioCtx;}
+function playClick(accent){
+  try{const ctx=getAudio();const o=ctx.createOscillator();const g=ctx.createGain();
+  o.connect(g);g.connect(ctx.destination);o.frequency.value=accent?1200:800;
+  g.gain.setValueAtTime(accent?.4:.25,ctx.currentTime);
+  g.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+.08);
+  o.start(ctx.currentTime);o.stop(ctx.currentTime+.08);}catch(e){}
+}
+function togglePlay(){isPlaying?stopPlay():startPlay();}
+function startPlay(){
+  isPlaying=true;
+  document.getElementById('btn-play').classList.add('playing');
+  document.getElementById('btn-play').textContent='■ 停止';
+  tapTimes=[];expectedTimes=[];
+  const bd=60/bpm*1000;
+  let d=0;
+  rhythmPattern.beats.forEach(b=>{expectedTimes.push(d);d+=(b==='r'?bd:b*bd);});
+  playStart=performance.now();
+  let idx=0;
+  function step(){
+    if(!isPlaying){currentBeat=-1;refreshBeats();return;}
+    if(idx>=rhythmPattern.beats.length){stopPlay();return;}
+    currentBeat=idx;refreshBeats();
+    const b=rhythmPattern.beats[idx];
+    playClick(idx===0);
+    const dur=b==='r'?60/bpm*1000:b*60/bpm*1000;
+    idx++;playTmr=setTimeout(step,dur);
+  }
+  step();
+}
+function stopPlay(){
+  isPlaying=false;clearTimeout(playTmr);currentBeat=-1;refreshBeats();
+  document.getElementById('btn-play').classList.remove('playing');
+  document.getElementById('btn-play').textContent='▶ 再生';
+}
+function refreshBeats(){
+  rhythmPattern.beats&&rhythmPattern.beats.forEach((_,i)=>{
+    const b=document.getElementById('beat-'+i);
+    if(b){b.classList.remove('active');if(i===currentBeat)b.classList.add('active');}
+  });
+}
+function tapBeat(e){
+  if(e)e.preventDefault();
+  const now=performance.now();
+  const z=document.getElementById('tap-zone');
+  z.classList.add('tapped');setTimeout(()=>z.classList.remove('tapped'),100);
+  if(!isPlaying){document.getElementById('tap-fb').textContent='▶ まず再生してください';return;}
+  const elapsed=now-playStart;
+  const bd=60/bpm*1000;
+  let minD=Infinity;
+  expectedTimes.forEach(t=>{const d=Math.abs(elapsed-t);if(d<minD)minD=d;});
+  const pct=minD/bd*100;
+  const fb=document.getElementById('tap-fb');
+  rS.att++;
+  if(pct<8){rS.prf++;fb.textContent='✓ Perfect! ぴったり！';fb.className='tap-fb ok';}
+  else if(pct<20){rS.cls++;fb.textContent='〜 Close / まあまあ';fb.className='tap-fb';}
+  else{rS.mss++;fb.textContent='✗ Miss — ずれています';fb.className='tap-fb ng';}
+  document.getElementById('r-att').textContent=rS.att;
+  document.getElementById('r-prf').textContent=rS.prf;
+  document.getElementById('r-cls').textContent=rS.cls;
+  document.getElementById('r-mss').textContent=rS.mss;
+}
+
+// INIT
+buildKeySigUI();
+nextQuestion();
+updateKeyTip();
+newRhythm();
+renderHistory();
+</script>
+</body>
+</html>
