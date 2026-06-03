@@ -1790,13 +1790,21 @@ function renderStaff(){
   function drawLedgerLinesFor(noteY,xCenter){
     const bottomLine=topLineY+4*ls;
     const lw=26;
+    const halfStep=ls/2;
+
+    // Draw ledger lines only when the note sits on an out-of-staff LINE.
+    // If the note is only in the adjacent SPACE, no ledger line should appear.
     if(noteY < topLineY){
-      for(let y=topLineY-ls; y>=noteY-ls/2; y-=ls){
+      const offset=Math.round((topLineY-noteY)/halfStep);
+      for(let step=2; step<=offset; step+=2){
+        const y=topLineY-(step/2)*ls;
         el('line',{x1:xCenter-lw/2,x2:xCenter+lw/2,y1:y,y2:y,stroke:lc,'stroke-width':1},svg);
       }
     }
     if(noteY > bottomLine){
-      for(let y=bottomLine+ls; y<=noteY+ls/2; y+=ls){
+      const offset=Math.round((noteY-bottomLine)/halfStep);
+      for(let step=2; step<=offset; step+=2){
+        const y=bottomLine+(step/2)*ls;
         el('line',{x1:xCenter-lw/2,x2:xCenter+lw/2,y1:y,y2:y,stroke:lc,'stroke-width':1},svg);
       }
     }
@@ -1810,11 +1818,6 @@ function renderStaff(){
     const x=noteX+xOffset;
     drawLedgerLinesFor(noteY,x);
 
-    const midCCheck=(currentClef==='treble'&&note.n==='C'&&note.o===4)||(currentClef==='bass'&&note.n==='C'&&note.o===4);
-    if(midCCheck){
-      const mcy=getNoteY({n:'C',o:4},currentClef,topLineY,ls);
-      el('line',{x1:x-13,x2:x+13,y1:mcy,y2:mcy,stroke:lc,'stroke-width':1},svg);
-    }
 
     const ne=document.createElementNS('http://www.w3.org/2000/svg','ellipse');
     ne.setAttribute('cx',x);ne.setAttribute('cy',noteY);
