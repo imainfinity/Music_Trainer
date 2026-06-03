@@ -305,7 +305,7 @@ svg.staff{height:190px;filter:drop-shadow(0 10px 20px rgba(0,0,0,.08));}
 .note-btn.selected .en,.note-btn.selected .jp{color:#BFE0FF;}
 .chord-panel{
   display:none;
-  margin:0 0 12px;
+  margin:-2px 0 14px;
   padding:12px;
   border-radius:18px;
   background:rgba(255,255,255,.055);
@@ -507,15 +507,6 @@ input[type="range"]{accent-color:#7DB7FF;}
     <div class="keysig-tip" id="keysig-tip"></div>
   </div>
 
-  <div class="staff-card">
-    <div class="clef-badge"><span class="clef-dot"></span><span id="clef-label">TREBLE CLEF — ト音記号</span></div>
-    <svg class="staff" id="staff-svg" viewBox="0 -70 560 210" xmlns="http://www.w3.org/2000/svg"></svg>
-  </div>
-
-  <button class="staff-skip-btn" onclick="nextQuestion()">次の問題へ / Skip →</button>
-
-  <div class="feedback-bar wait" id="feedback">音名ボタンまたは鍵盤をタップ</div>
-
   <div class="chord-panel" id="chord-panel">
     <div class="chord-row">
       <div class="chord-size-row">
@@ -535,9 +526,19 @@ input[type="range"]{accent-color:#7DB7FF;}
       <button class="chord-action-btn" onclick="clearChordSelection()">選択クリア</button>
       <button class="chord-action-btn primary" onclick="submitChordAnswer()">答え合わせ / Check</button>
     </div>
-    <div class="chord-info" id="chord-info">重音モードでは、楽譜上の2〜4音を鍵盤でオクターブ込み選択します。Large Spreadでは、1オクターブを超えるような大きく開いた譜面型も出します。</div>
+    <div class="chord-info" id="chord-info">この設問の答え合わせコマンドです。鍵盤でオクターブ込み選択し、Checkしてください。Large Spreadでは大きく開いた譜面型も出します。</div>
     <div class="chord-pitch-row" id="chord-pitch-row"></div>
   </div>
+
+
+  <div class="staff-card">
+    <div class="clef-badge"><span class="clef-dot"></span><span id="clef-label">TREBLE CLEF — ト音記号</span></div>
+    <svg class="staff" id="staff-svg" viewBox="0 -70 560 210" xmlns="http://www.w3.org/2000/svg"></svg>
+  </div>
+
+  <button class="staff-skip-btn" onclick="nextQuestion()">次の問題へ / Skip →</button>
+
+  <div class="feedback-bar wait" id="feedback">音名ボタンまたは鍵盤をタップ</div>
 
   <!-- note name buttons -->
   <div class="note-buttons" id="note-buttons">
