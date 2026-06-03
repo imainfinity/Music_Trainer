@@ -269,7 +269,9 @@ body:before{
 }
 .clef-badge{color:#71695F;font-weight:600;}
 .clef-dot{background:linear-gradient(135deg,#4777FF,#7DB7FF);box-shadow:0 0 0 4px rgba(71,119,255,.12);}
-svg.staff{height:126px;filter:drop-shadow(0 10px 20px rgba(0,0,0,.08));}
+svg.staff{height:190px;filter:drop-shadow(0 10px 20px rgba(0,0,0,.08));}
+.staff-skip-btn{width:100%;margin:8px 0 12px;padding:10px 12px;font-size:12px;font-family:'DM Mono',monospace;border:none;border-radius:14px;background:linear-gradient(135deg,rgba(71,119,255,.88),rgba(125,93,255,.88));color:#fff;cursor:pointer;font-weight:700;box-shadow:0 14px 30px rgba(71,119,255,.18);}
+.staff-skip-btn:hover{transform:translateY(-1px);filter:brightness(1.04);}
 .feedback-bar{
   border-radius:14px;
   padding:10px 14px;
@@ -507,8 +509,10 @@ input[type="range"]{accent-color:#7DB7FF;}
 
   <div class="staff-card">
     <div class="clef-badge"><span class="clef-dot"></span><span id="clef-label">TREBLE CLEF — ト音記号</span></div>
-    <svg class="staff" id="staff-svg" viewBox="0 -25 560 120" xmlns="http://www.w3.org/2000/svg"></svg>
+    <svg class="staff" id="staff-svg" viewBox="0 -70 560 210" xmlns="http://www.w3.org/2000/svg"></svg>
   </div>
+
+  <button class="staff-skip-btn" onclick="nextQuestion()">次の問題へ / Skip →</button>
 
   <div class="feedback-bar wait" id="feedback">音名ボタンまたは鍵盤をタップ</div>
 
@@ -523,7 +527,7 @@ input[type="range"]{accent-color:#7DB7FF;}
         <button class="chord-size-btn active" id="voicing-mixed" onclick="setChordVoicing('mixed')">Mixed</button>
         <button class="chord-size-btn" id="voicing-close" onclick="setChordVoicing('close')">Close</button>
         <button class="chord-size-btn" id="voicing-open" onclick="setChordVoicing('open')">Open</button>
-        <button class="chord-size-btn" id="voicing-wide" onclick="setChordVoicing('wide')">Wide</button>
+        <button class="chord-size-btn" id="voicing-wide" onclick="setChordVoicing('wide')">Large Spread</button>
       </div>
       <div class="chord-selected-count" id="chord-selected-count">選択: 0 / 2</div>
     </div>
@@ -531,7 +535,7 @@ input[type="range"]{accent-color:#7DB7FF;}
       <button class="chord-action-btn" onclick="clearChordSelection()">選択クリア</button>
       <button class="chord-action-btn primary" onclick="submitChordAnswer()">答え合わせ / Check</button>
     </div>
-    <div class="chord-info" id="chord-info">重音モードでは、楽譜上の2〜4音を鍵盤でオクターブ込み選択します。2音Wideは1オクターブ近辺まで広げます。</div>
+    <div class="chord-info" id="chord-info">重音モードでは、楽譜上の2〜4音を鍵盤でオクターブ込み選択します。Large Spreadでは、1オクターブを超えるような大きく開いた譜面型も出します。</div>
     <div class="chord-pitch-row" id="chord-pitch-row"></div>
   </div>
 
@@ -863,6 +867,57 @@ function chordSpanSemitones(notes){
   return Math.max(...ms)-Math.min(...ms);
 }
 
+function clefRange(clef){
+  return clef==='treble'
+    ? {min:{n:'G',o:3},max:{n:'C',o:6}}
+    : {min:{n:'C',o:2},max:{n:'G',o:4}};
+}
+
+function clampIntoClefRange(note,clef){
+  const range=clefRange(clef);
+  const out={...note};
+  while(noteToMidi(out)<noteToMidi(range.min)) out.o++;
+  while(noteToMidi(out)>noteToMidi(range.max)) out.o--;
+  return out;
+}
+
+function spreadNotesIntoClef(notes,clef,minSpan=14,targetSpan=20){
+  // For real score-style spread chords, do NOT compress into one hand.
+  // Keep notes within the clef's readable range, while aiming for a broad vertical span.
+  let out=notes.map(n=>clampIntoClefRange(n,clef)).sort((a,b)=>noteToMidi(a)-noteToMidi(b));
+
+  for(let guard=0;guard<24;guard++){
+    const span=chordSpanSemitones(out);
+    if(span>=minSpan) break;
+    let moved=false;
+
+    // Try raising upper voices first.
+    for(let i=out.length-1;i>=1;i--){
+      const test=out.map(n=>({...n}));
+      test[i].o++;
+      test[i]=clampIntoClefRange(test[i],clef);
+      if(noteToMidi(test[i])!==noteToMidi(out[i]) && chordSpanSemitones(test)>span && chordSpanSemitones(test)<=targetSpan+6){
+        out=test.sort((a,b)=>noteToMidi(a)-noteToMidi(b));
+        moved=true;
+        break;
+      }
+    }
+    if(moved) continue;
+
+    // Then try lowering the bass voice.
+    const test=out.map(n=>({...n}));
+    test[0].o--;
+    test[0]=clampIntoClefRange(test[0],clef);
+    if(noteToMidi(test[0])!==noteToMidi(out[0]) && chordSpanSemitones(test)>span){
+      out=test.sort((a,b)=>noteToMidi(a)-noteToMidi(b));
+      moved=true;
+    }
+    if(!moved) break;
+  }
+
+  return out.sort((a,b)=>noteToMidi(a)-noteToMidi(b));
+}
+
 function normalizePlayableChord(notes,clef){
   let out=notes.map(n=>({...n}));
   out=out.map(n=>clampChordNote(n,clef));
@@ -917,8 +972,8 @@ function toggleChordPitch(note){
 function pickVoicingType(){
   if(chordVoicingMode!=='mixed') return chordVoicingMode;
   const pool=chordSize===2
-    ? ['close','open','wide']
-    : ['close','open','wide','open','wide'];
+    ? ['close','open','wide','wide']
+    : ['close','open','wide','open','wide','wide'];
   return pool[Math.floor(Math.random()*pool.length)];
 }
 
@@ -933,49 +988,53 @@ function pickWeighted(items){
 }
 
 function buildPlayableDyad(scale,degree,voicingType){
-  // Two-note mode should train actual playable distance, not only close stacked thirds.
-  // Close: mainly 3rd/5th. Open: 5th/6th/7th. Wide: near-octave targets, maxing around one octave.
-  const candidates=[];
+  // Two-note mode:
+  // Close = near notes.
+  // Open = medium spread.
+  // Large Spread = real score-style wide intervals beyond one octave when possible.
   const patterns = voicingType==='wide'
     ? [
-        {a:0,b:7,w:4,name:'Octave'},
-        {a:0,b:6,w:4,name:'7th'},
-        {a:1,b:7,w:2,name:'6th'},
-        {a:0,b:5,w:2,name:'6th'}
+        {a:0,b:9,w:4,name:'10th'},
+        {a:0,b:11,w:4,name:'12th'},
+        {a:0,b:14,w:3,name:'Double octave'},
+        {a:1,b:12,w:2,name:'Wide 10th'},
+        {a:0,b:7,w:1,name:'Octave'}
       ]
     : voicingType==='open'
       ? [
-          {a:0,b:4,w:3,name:'5th'},
+          {a:0,b:6,w:3,name:'7th'},
+          {a:0,b:7,w:3,name:'Octave'},
           {a:0,b:5,w:2,name:'6th'},
-          {a:0,b:6,w:2,name:'7th'},
-          {a:1,b:5,w:1,name:'5th'}
+          {a:1,b:7,w:1,name:'6th'}
         ]
       : [
           {a:0,b:2,w:4,name:'3rd'},
-          {a:0,b:4,w:2,name:'5th'},
-          {a:1,b:3,w:1,name:'3rd'}
+          {a:0,b:4,w:3,name:'5th'},
+          {a:0,b:3,w:1,name:'4th'}
         ];
 
+  const candidates=[];
   patterns.forEach(p=>{
     const low=scale[degree+p.a];
     const high=scale[degree+p.b];
     if(!low||!high) return;
-    let notes=normalizePlayableChord([{...low},{...high}],currentClef);
+    let notes=[clampIntoClefRange({...low},currentClef),clampIntoClefRange({...high},currentClef)]
+      .sort((a,b)=>noteToMidi(a)-noteToMidi(b));
+    if(voicingType==='wide') notes=spreadNotesIntoClef(notes,currentClef,14,24);
+    else if(voicingType==='open') notes=spreadNotesIntoClef(notes,currentClef,9,14);
+    else notes=normalizePlayableChord(notes,currentClef);
     const span=chordSpanSemitones(notes);
-    if(span>=3 && span<=12){
-      candidates.push({...p,notes,span});
-    }
+    if(span>=3) candidates.push({...p,notes,span});
   });
 
   if(candidates.length===0){
     return {notes:normalizePlayableChord([{...scale[degree]},{...scale[degree+2]}],currentClef), intervalName:'3rd'};
   }
 
-  // In wide mode, prefer the widest playable pair available.
   if(voicingType==='wide'){
     candidates.sort((a,b)=>b.span-a.span);
     const maxSpan=candidates[0].span;
-    const nearMax=candidates.filter(c=>c.span>=Math.max(7,maxSpan-2));
+    const nearMax=candidates.filter(c=>c.span>=Math.max(14,maxSpan-3));
     const chosen=pickWeighted(nearMax);
     return {notes:chosen.notes, intervalName:chosen.name};
   }
@@ -985,34 +1044,40 @@ function buildPlayableDyad(scale,degree,voicingType){
 }
 
 function applyChordVoicing(notes,voicingType){
-  // Build realistic, playable piano voicings.
-  // Close: normal stack within one octave.
-  // Open/Wide: uses inversions and octave placement, but normalizes to a playable hand span.
   let out=notes.map(n=>({...n}));
 
+  if(voicingType==='close'){
+    return normalizePlayableChord(out,currentClef);
+  }
+
   if(voicingType==='open'){
-    if(out.length===2){
-      // 6th-like / octave-friendly dyad when possible
-      out[0].o+=1;
-    }else if(out.length===3){
-      // First inversion style: 3rd-5th-root, compact but not just stacked.
+    if(out.length===3){
+      // first inversion style, medium spread
       out=[{...out[1]},{...out[2]},{...out[0],o:out[0].o+1}];
-    }else{
-      // 3rd-5th-7th-root, common playable 7th voicing.
+    }else if(out.length===4){
       out=[{...out[1]},{...out[2]},{...out[3]},{...out[0],o:out[0].o+1}];
     }
+    return spreadNotesIntoClef(out,currentClef,10,16);
   }
 
   if(voicingType==='wide'){
-    if(out.length===2){
-      out[1].o+=1; // octave/compound interval dyad, still normalized below
-    }else if(out.length===3){
-      // Second inversion style: 5th-root-3rd
-      out=[{...out[2]},{...out[0],o:out[0].o+1},{...out[1],o:out[1].o+1}];
-    }else{
-      // Rootless-like color inside an octave after normalization.
-      out=[{...out[2]},{...out[3]},{...out[0],o:out[0].o+1},{...out[1],o:out[1].o+1}];
+    if(out.length===3){
+      // Real-score wide: bass note + upper chord tones far above.
+      out=[
+        {...out[0],o:out[0].o-1},
+        {...out[2]},
+        {...out[1],o:out[1].o+1}
+      ];
+    }else if(out.length===4){
+      // Wide stacked color: bass low, inner voices, top high.
+      out=[
+        {...out[0],o:out[0].o-1},
+        {...out[2]},
+        {...out[3],o:out[3].o+1},
+        {...out[1],o:out[1].o+1}
+      ];
     }
+    return spreadNotesIntoClef(out,currentClef,14,24);
   }
 
   return normalizePlayableChord(out,currentClef);
@@ -1053,7 +1118,7 @@ function generateChordQuestion(){
   const offsets=chordSize===2?[0,2]:(chordSize===3?[0,2,4]:[0,2,4,6]);
   const voicingType=pickVoicingType();
   const quality=getDiatonicChordQuality(degree,chordSize);
-  const voicingLabel={close:'Close',open:'Open',wide:'Wide'}[voicingType]||'Mixed';
+  const voicingLabel={close:'Close',open:'Open',wide:'Large Spread'}[voicingType]||'Mixed';
 
   let closeNotes, notes, intervalName='';
   if(chordSize===2){
@@ -1086,7 +1151,7 @@ function updateChordPanel(){
   if(count) count.textContent=`選択: ${chordPitchSelection.size} / ${chordSize}`;
   if(info&&currentChord){
     const span=chordSpanSemitones(currentChord.notes);
-    info.textContent=`${currentChord.label}　鍵盤で実音 ${chordSize}音を選択してください。想定スパン: ${span}半音`;
+    info.textContent=`${currentChord.label}　鍵盤で実音 ${chordSize}音を選択してください。譜面スパン: ${span}半音`;
   }
   updateChordPitchRow();
 }
@@ -1809,6 +1874,18 @@ function tapBeat(e){
   document.getElementById('r-cls').textContent=rS.cls;
   document.getElementById('r-mss').textContent=rS.mss;
 }
+
+document.addEventListener('keydown',e=>{
+  if(e.key!=='ArrowRight') return;
+  const active=document.activeElement;
+  const tag=active&&active.tagName?active.tagName.toLowerCase():'';
+  if(tag==='input'||tag==='textarea'||tag==='select'||active?.isContentEditable) return;
+  const sightPage=document.getElementById('page-sight');
+  if(!sightPage||!sightPage.classList.contains('active')) return;
+  e.preventDefault();
+  clearTimeout(autoTimer);
+  nextQuestion();
+});
 
 // INIT
 buildKeySigUI();
