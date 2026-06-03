@@ -336,6 +336,32 @@ svg.staff{height:126px;filter:drop-shadow(0 10px 20px rgba(0,0,0,.08));}
   line-height:1.55;
   color:rgba(246,241,231,.64);
 }
+.chord-pitch-row{
+  display:flex;
+  flex-wrap:wrap;
+  gap:7px;
+  margin-top:10px;
+}
+.chord-pitch-chip{
+  padding:6px 9px;
+  border-radius:999px;
+  background:rgba(255,255,255,.08);
+  border:1px solid rgba(255,255,255,.12);
+  color:rgba(246,241,231,.76);
+  font-size:12px;
+  font-family:var(--mono);
+}
+.chord-pitch-chip.empty{color:rgba(246,241,231,.40);}
+.chord-pitch-chip.on{
+  background:rgba(125,183,255,.18);
+  border-color:rgba(125,183,255,.34);
+  color:#D6EAFF;
+}
+.chord-action-btn.danger{
+  background:rgba(255,107,118,.12);
+  border-color:rgba(255,107,118,.24);
+  color:#FFB6BC;
+}
 .chord-selected-count{font-family:var(--mono);font-size:12px;color:rgba(246,241,231,.62);}
 @media (max-width:720px){
   .chord-row{align-items:stretch;flex-direction:column;}
@@ -505,7 +531,8 @@ input[type="range"]{accent-color:#7DB7FF;}
       <button class="chord-action-btn" onclick="clearChordSelection()">選択クリア</button>
       <button class="chord-action-btn primary" onclick="submitChordAnswer()">答え合わせ / Check</button>
     </div>
-    <div class="chord-info" id="chord-info">重音モードでは、楽譜上の2〜4音を音名ボタンで複数選択します。</div>
+    <div class="chord-info" id="chord-info">重音モードでは、楽譜上の2〜4音を鍵盤でオクターブ込み選択します。2音Wideは1オクターブ近辺まで広げます。</div>
+    <div class="chord-pitch-row" id="chord-pitch-row"></div>
   </div>
 
   <!-- note name buttons -->
@@ -645,6 +672,7 @@ let questionMode='single';
 let chordSize=2;
 let currentChord=null;
 let chordSelection=new Set();
+let chordPitchSelection=new Set();
 let chordVoicingMode='mixed';
 
 function toggleAuto(){
@@ -803,6 +831,89 @@ function setChordVoicing(mode){
   if(questionMode==='chord') nextQuestion();
 }
 
+function pitchKey(note){
+  return note ? `${note.n}${note.o}` : '';
+}
+
+function parsePitchKey(key){
+  const m=String(key).match(/^([A-G])(\d+)$/);
+  return m?{n:m[1],o:parseInt(m[2],10)}:null;
+}
+
+function pitchLabel(note){
+  if(!note) return '';
+  const ks=selectedKeySig;
+  const blackFlatMap={D:'D♭',E:'E♭',G:'G♭',A:'A♭',B:'B♭'};
+  const blackSharpMap={C:'C#',D:'D#',F:'F#',G:'G#',A:'A#'};
+  if(ks.flats.includes(note.n) && blackFlatMap[note.n]) return `${blackFlatMap[note.n]}${note.o}`;
+  if(ks.sharps.includes(note.n) && blackSharpMap[note.n]) return `${blackSharpMap[note.n]}${note.o}`;
+  return `${note.n}${note.o}`;
+}
+
+function noteToMidi(note){
+  const semis={C:0,D:2,E:4,F:5,G:7,A:9,B:11};
+  let acc=0;
+  if(selectedKeySig.sharps.includes(note.n)) acc=1;
+  if(selectedKeySig.flats.includes(note.n)) acc=-1;
+  return (note.o+1)*12 + semis[note.n] + acc;
+}
+
+function chordSpanSemitones(notes){
+  const ms=notes.map(noteToMidi);
+  return Math.max(...ms)-Math.min(...ms);
+}
+
+function normalizePlayableChord(notes,clef){
+  let out=notes.map(n=>({...n}));
+  out=out.map(n=>clampChordNote(n,clef));
+
+  // Keep the playable chord mostly within one octave.
+  for(let guard=0;guard<24;guard++){
+    out.sort((a,b)=>noteToMidi(a)-noteToMidi(b));
+    const span=chordSpanSemitones(out);
+    if(span<=12) break;
+    const before=span;
+    const top=out[out.length-1];
+    top.o-=1;
+    const clamped=clampChordNote(top,clef);
+    top.o=clamped.o;
+    if(chordSpanSemitones(out)>=before){
+      const bottom=out[0];
+      bottom.o+=1;
+      const bclamped=clampChordNote(bottom,clef);
+      bottom.o=bclamped.o;
+      if(chordSpanSemitones(out)>=before) break;
+    }
+  }
+
+  out.sort((a,b)=>noteToMidi(a)-noteToMidi(b));
+  return out;
+}
+
+function updateChordPitchRow(){
+  const row=document.getElementById('chord-pitch-row');
+  if(!row) return;
+  if(questionMode!=='chord'){
+    row.innerHTML='';
+    return;
+  }
+  const items=[...chordPitchSelection].map(parsePitchKey).filter(Boolean).sort((a,b)=>noteToMidi(a)-noteToMidi(b));
+  if(items.length===0){
+    row.innerHTML='<span class="chord-pitch-chip empty">鍵盤で音を選択</span>';
+    return;
+  }
+  row.innerHTML=items.map(n=>`<span class="chord-pitch-chip on">${pitchLabel(n)}</span>`).join('');
+}
+
+function toggleChordPitch(note){
+  if(answered||questionMode!=='chord') return;
+  const key=pitchKey(note);
+  if(chordPitchSelection.has(key)) chordPitchSelection.delete(key);
+  else chordPitchSelection.add(key);
+  renderKeyboard(null);
+  updateChordPanel();
+}
+
 function pickVoicingType(){
   if(chordVoicingMode!=='mixed') return chordVoicingMode;
   const pool=chordSize===2
@@ -811,35 +922,100 @@ function pickVoicingType(){
   return pool[Math.floor(Math.random()*pool.length)];
 }
 
+function pickWeighted(items){
+  const total=items.reduce((s,x)=>s+(x.w||1),0);
+  let r=Math.random()*total;
+  for(const item of items){
+    r-=item.w||1;
+    if(r<=0) return item;
+  }
+  return items[items.length-1];
+}
+
+function buildPlayableDyad(scale,degree,voicingType){
+  // Two-note mode should train actual playable distance, not only close stacked thirds.
+  // Close: mainly 3rd/5th. Open: 5th/6th/7th. Wide: near-octave targets, maxing around one octave.
+  const candidates=[];
+  const patterns = voicingType==='wide'
+    ? [
+        {a:0,b:7,w:4,name:'Octave'},
+        {a:0,b:6,w:4,name:'7th'},
+        {a:1,b:7,w:2,name:'6th'},
+        {a:0,b:5,w:2,name:'6th'}
+      ]
+    : voicingType==='open'
+      ? [
+          {a:0,b:4,w:3,name:'5th'},
+          {a:0,b:5,w:2,name:'6th'},
+          {a:0,b:6,w:2,name:'7th'},
+          {a:1,b:5,w:1,name:'5th'}
+        ]
+      : [
+          {a:0,b:2,w:4,name:'3rd'},
+          {a:0,b:4,w:2,name:'5th'},
+          {a:1,b:3,w:1,name:'3rd'}
+        ];
+
+  patterns.forEach(p=>{
+    const low=scale[degree+p.a];
+    const high=scale[degree+p.b];
+    if(!low||!high) return;
+    let notes=normalizePlayableChord([{...low},{...high}],currentClef);
+    const span=chordSpanSemitones(notes);
+    if(span>=3 && span<=12){
+      candidates.push({...p,notes,span});
+    }
+  });
+
+  if(candidates.length===0){
+    return {notes:normalizePlayableChord([{...scale[degree]},{...scale[degree+2]}],currentClef), intervalName:'3rd'};
+  }
+
+  // In wide mode, prefer the widest playable pair available.
+  if(voicingType==='wide'){
+    candidates.sort((a,b)=>b.span-a.span);
+    const maxSpan=candidates[0].span;
+    const nearMax=candidates.filter(c=>c.span>=Math.max(7,maxSpan-2));
+    const chosen=pickWeighted(nearMax);
+    return {notes:chosen.notes, intervalName:chosen.name};
+  }
+
+  const chosen=pickWeighted(candidates);
+  return {notes:chosen.notes, intervalName:chosen.name};
+}
+
 function applyChordVoicing(notes,voicingType){
-  const out=notes.map(n=>({...n}));
-  if(voicingType==='close') return out.map(n=>clampChordNote(n,currentClef));
+  // Build realistic, playable piano voicings.
+  // Close: normal stack within one octave.
+  // Open/Wide: uses inversions and octave placement, but normalizes to a playable hand span.
+  let out=notes.map(n=>({...n}));
 
   if(voicingType==='open'){
     if(out.length===2){
-      out[1].o+=1;
+      // 6th-like / octave-friendly dyad when possible
+      out[0].o+=1;
     }else if(out.length===3){
-      out[1].o+=1; // third above the fifth: open triad feel
+      // First inversion style: 3rd-5th-root, compact but not just stacked.
+      out=[{...out[1]},{...out[2]},{...out[0],o:out[0].o+1}];
     }else{
-      out[1].o+=1;
-      out[3].o+=1; // spread 7th upward
+      // 3rd-5th-7th-root, common playable 7th voicing.
+      out=[{...out[1]},{...out[2]},{...out[3]},{...out[0],o:out[0].o+1}];
     }
   }
 
   if(voicingType==='wide'){
     if(out.length===2){
-      out[1].o+=1;
+      out[1].o+=1; // octave/compound interval dyad, still normalized below
     }else if(out.length===3){
-      out[1].o+=1;
-      out[2].o+=1;
+      // Second inversion style: 5th-root-3rd
+      out=[{...out[2]},{...out[0],o:out[0].o+1},{...out[1],o:out[1].o+1}];
     }else{
-      out[1].o+=1;
-      out[2].o+=1;
-      out[3].o+=1;
+      // Rootless-like color inside an octave after normalization.
+      out=[{...out[2]},{...out[3]},{...out[0],o:out[0].o+1},{...out[1],o:out[1].o+1}];
     }
   }
 
-  return out.map(n=>clampChordNote(n,currentClef));
+  return normalizePlayableChord(out,currentClef);
 }
 
 function getMajorRootLetter(){
@@ -875,12 +1051,22 @@ function generateChordQuestion(){
   const scale=buildLetterScale(rootLetter,baseOct);
   const degree=Math.floor(Math.random()*7);
   const offsets=chordSize===2?[0,2]:(chordSize===3?[0,2,4]:[0,2,4,6]);
-  const closeNotes=offsets.map(o=>scale[degree+o]);
   const voicingType=pickVoicingType();
-  const notes=applyChordVoicing(closeNotes,voicingType);
-  const letters=[...new Set(closeNotes.map(n=>n.n))];
   const quality=getDiatonicChordQuality(degree,chordSize);
   const voicingLabel={close:'Close',open:'Open',wide:'Wide'}[voicingType]||'Mixed';
+
+  let closeNotes, notes, intervalName='';
+  if(chordSize===2){
+    const dyad=buildPlayableDyad(scale,degree,voicingType);
+    notes=dyad.notes;
+    closeNotes=notes;
+    intervalName=dyad.intervalName;
+  }else{
+    closeNotes=offsets.map(o=>scale[degree+o]);
+    notes=applyChordVoicing(closeNotes,voicingType);
+  }
+
+  const letters=[...new Set(notes.map(n=>n.n))];
   return {
     notes,
     letters,
@@ -888,7 +1074,8 @@ function generateChordQuestion(){
     quality,
     voicingType,
     voicingLabel,
-    label:`${selectedKeySig.jp} — ${quality} / ${voicingLabel}`,
+    intervalName,
+    label:`${selectedKeySig.jp} — ${quality} / ${voicingLabel}${intervalName?' / '+intervalName:''}`,
     jp:`正解: ${letters.join('・')}`
   };
 }
@@ -896,16 +1083,20 @@ function generateChordQuestion(){
 function updateChordPanel(){
   const count=document.getElementById('chord-selected-count');
   const info=document.getElementById('chord-info');
-  if(count) count.textContent=`選択: ${chordSelection.size} / ${chordSize}`;
+  if(count) count.textContent=`選択: ${chordPitchSelection.size} / ${chordSize}`;
   if(info&&currentChord){
-    info.textContent=`${currentChord.label}　離れた配置でも、構成音 ${chordSize}音を選択してください。`;
+    const span=chordSpanSemitones(currentChord.notes);
+    info.textContent=`${currentChord.label}　鍵盤で実音 ${chordSize}音を選択してください。想定スパン: ${span}半音`;
   }
+  updateChordPitchRow();
 }
 
 function clearChordSelection(){
   if(answered) return;
   chordSelection.clear();
+  chordPitchSelection.clear();
   document.querySelectorAll('.note-btn').forEach(b=>b.classList.remove('selected','correct','wrong'));
+  renderKeyboard(null);
   updateChordPanel();
 }
 
@@ -924,24 +1115,23 @@ function submitChordAnswer(){
   if(questionMode!=='chord'||answered||!currentChord) return;
   answered=true;
   stats.total++;
-  const correctSet=new Set(currentChord.letters);
-  const selected=[...chordSelection];
-  const correct=selected.length===correctSet.size && selected.every(n=>correctSet.has(n));
+  const correctSet=new Set(currentChord.notes.map(pitchKey));
+  const selected=[...chordPitchSelection];
+  const correct=selected.length===correctSet.size && selected.every(k=>correctSet.has(k));
   const fb=document.getElementById('feedback');
   if(correct){
     stats.correct++;stats.streak++;
-    fb.textContent=`✓ 正解！ ${currentChord.label} — ${currentChord.letters.join('・')}`;
+    fb.textContent=`✓ 正解！ ${currentChord.label} — ${currentChord.notes.map(pitchLabel).join('・')}`;
     fb.className='feedback-bar ok';
   }else{
     stats.streak=0;
-    fb.textContent=`✗ 不正解 → ${currentChord.label} / 正解: ${currentChord.letters.join('・')}`;
+    fb.textContent=`✗ 不正解 → ${currentChord.label} / 正解: ${currentChord.notes.map(pitchLabel).join('・')}`;
     fb.className='feedback-bar ng';
   }
   document.querySelectorAll('.note-btn').forEach(b=>{
     const en=b.querySelector('.en').textContent;
     b.classList.remove('selected','correct','wrong');
-    if(correctSet.has(en)) b.classList.add('correct');
-    else if(chordSelection.has(en)) b.classList.add('wrong');
+    if(currentChord.letters.includes(en)) b.classList.add('correct');
   });
   renderKeyboard(currentChord.notes);
   updateStats();
@@ -950,11 +1140,11 @@ function submitChordAnswer(){
     label:currentChord.label,
     note:'Chord',
     oct:'',
-    jp:currentChord.letters.join('・'),
+    jp:currentChord.notes.map(pitchLabel).join('・'),
     clef:currentClef,
     correct,
     answered:selected.join('・')||'—',
-    answeredLabel:selected.join('・')||'—',
+    answeredLabel:selected.map(k=>pitchLabel(parsePitchKey(k))).join('・')||'—',
     keySig:selectedKeySig,
     notes:currentChord.notes,
     letters:currentChord.letters,
@@ -1011,6 +1201,7 @@ function nextQuestion(){
   reviewingIdx=null;
   answered=false;
   chordSelection.clear();
+  chordPitchSelection.clear();
   currentChord=null;
   document.getElementById('next-btn').style.display='none';
   if(clefMode==='treble') currentClef='treble';
@@ -1045,7 +1236,9 @@ function nextQuestion(){
 
 function selectNote(n,displayLabel=n){
   if(questionMode==='chord'){
-    if(['C','D','E','F','G','A','B'].includes(n)) toggleChordSelection(n);
+    const fb=document.getElementById('feedback');
+    fb.textContent='重音モードは、下の鍵盤でオクターブ込みの実音を選択してください';
+    fb.className='feedback-bar wait';
     return;
   }
   if(answered) return;
@@ -1140,9 +1333,7 @@ function reviewHistory(i){
     const en=b.querySelector('.en').textContent;
     if(h.chord){
       const correctLetters=new Set(h.letters||[]);
-      const answeredLetters=new Set((h.answered||'').split('・').filter(Boolean));
       if(correctLetters.has(en)) b.classList.add('correct');
-      else if(answeredLetters.has(en)&&!h.correct) b.classList.add('wrong');
     }else{
       if(en===h.answered&&!h.correct) b.classList.add('wrong');
       if(en===h.note){
@@ -1419,12 +1610,13 @@ function renderKeyboard(answerNote){
       const x=(oi*7+ni)*WW;
       const isNatural=!ks.sharps.includes(n)&&!ks.flats.includes(n);
       const isAns=hasNote(answerNotes,n,oct)&&isNatural;
+      const isSelected=questionMode==='chord'&&chordPitchSelection.has(pitchKey({n,o:oct}));
       const isTarget=isQuestionTarget(n,oct)&&isNatural;
       const d=document.createElement('div');
       d.id='key-w-'+n+oct;
       d.style.cssText=`position:absolute;left:${x}px;top:0;width:${WW-1}px;height:${WH}px;`
-        +`background:${isAns?'#B5D4F4':'#FAFAF8'};`
-        +`border:1px solid ${isAns?'#2D5FA3':'#C8C3BB'};`
+        +`background:${isAns?'#B5D4F4':(isSelected?'#D6EAFF':'#FAFAF8')};`
+        +`border:1px solid ${isAns?'#2D5FA3':(isSelected?'#7DB7FF':'#C8C3BB')};`
         +`border-radius:0 0 4px 4px;cursor:pointer;box-sizing:border-box;`
         +`display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding-bottom:5px;`;
       if(n==='C'&&oct===4){
@@ -1436,8 +1628,8 @@ function renderKeyboard(answerNote){
       lbl.style.cssText=`font-size:8px;font-family:'DM Mono',monospace;color:${isAns?'#185FA5':'#CCC'};line-height:1;flex-shrink:0;`;
       lbl.textContent=n+oct;
       d.appendChild(lbl);
-      d.addEventListener('mousedown',e=>{e.preventDefault();selectNote(n);});
-      d.addEventListener('touchstart',e=>{e.preventDefault();selectNote(n);},{passive:false});
+      d.addEventListener('mousedown',e=>{e.preventDefault();questionMode==='chord'?toggleChordPitch({n,o:oct}):selectNote(n);});
+      d.addEventListener('touchstart',e=>{e.preventDefault();questionMode==='chord'?toggleChordPitch({n,o:oct}):selectNote(n);},{passive:false});
       wrap.appendChild(d);
       if(isAns) answerDiv=d;
       if(isTarget) targetDiv=d;
@@ -1457,6 +1649,7 @@ function renderKeyboard(answerNote){
         (useSharp&&note.n===bk.sharpBase) ||
         (useFlat&&note.n===bk.flatBase)
       ));
+      const isSelected=questionMode==='chord'&&chordPitchSelection.has(pitchKey({n:selectValue,o:oct}));
       const isTarget=targetNotes.some(note=>note&&note.o===oct&&(
         (useSharp&&note.n===bk.sharpBase) ||
         (useFlat&&note.n===bk.flatBase)
@@ -1464,15 +1657,15 @@ function renderKeyboard(answerNote){
       const d=document.createElement('div');
       d.id='key-b-'+bk.sharpBase+oct;
       d.style.cssText=`position:absolute;left:${x}px;top:0;width:${BW}px;height:${BH}px;`
-        +`background:${isAns?'#2D5FA3':'#2A2520'};`
+        +`background:${isAns?'#2D5FA3':(isSelected?'#7DB7FF':'#2A2520')};`
         +`border-radius:0 0 4px 4px;cursor:pointer;z-index:2;`
         +`display:flex;align-items:flex-end;justify-content:center;padding-bottom:4px;box-sizing:border-box;`;
       const lbl=document.createElement('span');
-      lbl.style.cssText=`font-size:7px;font-family:'DM Mono',monospace;color:${isAns?'#fff':'#666'};line-height:1;`;
+      lbl.style.cssText=`font-size:7px;font-family:'DM Mono',monospace;color:${(isAns||isSelected)?'#fff':'#666'};line-height:1;`;
       lbl.textContent=keyLabel;
       d.appendChild(lbl);
-      d.addEventListener('mousedown',e=>{e.preventDefault();selectNote(selectValue,displayValue);});
-      d.addEventListener('touchstart',e=>{e.preventDefault();selectNote(selectValue,displayValue);},{passive:false});
+      d.addEventListener('mousedown',e=>{e.preventDefault();questionMode==='chord'?toggleChordPitch({n:selectValue,o:oct}):selectNote(selectValue,displayValue);});
+      d.addEventListener('touchstart',e=>{e.preventDefault();questionMode==='chord'?toggleChordPitch({n:selectValue,o:oct}):selectNote(selectValue,displayValue);},{passive:false});
       wrap.appendChild(d);
       if(isAns) answerDiv=d;
       if(isTarget) targetDiv=d;
