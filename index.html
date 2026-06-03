@@ -295,6 +295,43 @@ svg.staff{height:126px;filter:drop-shadow(0 10px 20px rgba(0,0,0,.08));}
 .note-btn.correct .en,.note-btn.correct .jp{color:#91FFBB;}
 .note-btn.wrong{background:linear-gradient(180deg,rgba(255,107,118,.28),rgba(255,107,118,.12));border-color:rgba(255,107,118,.50);}
 .note-btn.wrong .en,.note-btn.wrong .jp{color:#FF9CA3;}
+.keyboard-mode-bar{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin:0 0 8px;
+  padding:10px 12px;
+  border-radius:18px;
+  background:rgba(255,255,255,.055);
+  border:1px solid rgba(255,255,255,.09);
+}
+.keyboard-mode-label{
+  font-size:11px;
+  font-family:var(--mono);
+  letter-spacing:.05em;
+  color:rgba(246,241,231,.56);
+}
+.keyboard-mode-btn{
+  border:1px solid rgba(255,255,255,.14);
+  background:rgba(255,255,255,.08);
+  color:rgba(246,241,231,.76);
+  border-radius:999px;
+  padding:7px 12px;
+  font-size:11px;
+  font-family:var(--mono);
+  cursor:pointer;
+  transition:all .15s;
+  white-space:nowrap;
+}
+.keyboard-mode-btn:hover{background:rgba(255,255,255,.13);color:#FFF7EA;transform:translateY(-1px);}
+.keyboard-mode-btn.auto{background:linear-gradient(135deg,#4777FF,#7D5DFF);color:#fff;border-color:rgba(255,255,255,.24);box-shadow:0 12px 30px rgba(71,119,255,.18);}
+.keyboard-mode-help{
+  margin-top:6px;
+  font-size:11px;
+  line-height:1.45;
+  color:rgba(246,241,231,.46);
+}
 .keyboard-wrap{border-radius:22px;padding:13px 12px 11px;margin-bottom:12px;background:linear-gradient(180deg,rgba(255,255,255,.12),rgba(255,255,255,.07));}
 .keyboard-wrap::-webkit-scrollbar{height:9px;}
 .keyboard-wrap::-webkit-scrollbar-track{background:rgba(255,255,255,.06);border-radius:999px;}
@@ -345,6 +382,8 @@ input[type="range"]{accent-color:#7DB7FF;}
   .bpm-ctl{justify-content:space-between;}
   .rlvl-tabs{display:grid;grid-template-columns:1fr;}
   .beat-box{width:46px;height:46px;}
+  .keyboard-mode-bar{align-items:flex-start;flex-direction:column;}
+  .keyboard-mode-btn{width:100%;}
 }
 
 </style>
@@ -408,6 +447,13 @@ input[type="range"]{accent-color:#7DB7FF;}
   </div>
 
   <!-- piano keyboard -->
+  <div class="keyboard-mode-bar">
+    <div>
+      <div class="keyboard-mode-label">Keyboard Position — 鍵盤位置</div>
+      <div class="keyboard-mode-help" id="keyboard-mode-help">設問の音に合わせて鍵盤を自動で中央へ動かします</div>
+    </div>
+    <button class="keyboard-mode-btn auto" id="keyboard-mode-btn" onclick="toggleKeyboardMode()">AUTO POSITION</button>
+  </div>
   <div class="keyboard-wrap" id="keyboard-wrap">
     <div id="keyboard-html" style="position:relative;height:88px;user-select:none;"></div>
   </div>
@@ -521,6 +567,7 @@ let autoAdvance=true;
 let autoTimer=null;
 let history=[];
 let keyTipMode=false;
+let keyboardAutoPosition=true;
 
 function toggleAuto(){
   autoAdvance=!autoAdvance;
@@ -530,6 +577,22 @@ function toggleAuto(){
   knob.style.left=autoAdvance?'18px':'2px';
   document.getElementById('next-btn').style.display='none';
   if(autoAdvance&&answered){ clearTimeout(autoTimer); nextQuestion(); }
+}
+
+function toggleKeyboardMode(){
+  keyboardAutoPosition=!keyboardAutoPosition;
+  const btn=document.getElementById('keyboard-mode-btn');
+  const help=document.getElementById('keyboard-mode-help');
+  if(btn){
+    btn.textContent=keyboardAutoPosition?'AUTO POSITION':'MANUAL SCROLL';
+    btn.classList.toggle('auto',keyboardAutoPosition);
+  }
+  if(help){
+    help.textContent=keyboardAutoPosition
+      ? '設問の音に合わせて鍵盤を自動で中央へ動かします'
+      : '鍵盤位置を固定し、自分で横スクロールします';
+  }
+  renderKeyboard(answered?currentNote:null);
 }
 
 function toggleKeyTip(){
@@ -993,6 +1056,8 @@ const BLACK_KEYS=[
 
 function renderKeyboard(answerNote){
   const wrap=document.getElementById('keyboard-html');
+  const wrapEl=document.getElementById('keyboard-wrap');
+  const keepScroll=wrapEl?wrapEl.scrollLeft:0;
   wrap.innerHTML='';
   const octaves=[2,3,4,5,6];
   const WW=28, WH=82, BW=17, BH=52;
@@ -1003,12 +1068,19 @@ function renderKeyboard(answerNote){
 
   const ks=selectedKeySig;
   let answerDiv=null;
+  let targetDiv=null;
+
+  function isQuestionTarget(noteName,oct){
+    return currentNote&&noteName===currentNote.n&&oct===currentNote.o;
+  }
 
   // White keys
   octaves.forEach((oct,oi)=>{
     WHITE_NOTES.forEach((n,ni)=>{
       const x=(oi*7+ni)*WW;
-      const isAns=answerNote&&n===answerNote.n&&oct===answerNote.o&&!ks.sharps.includes(n)&&!ks.flats.includes(n);
+      const isNatural=!ks.sharps.includes(n)&&!ks.flats.includes(n);
+      const isAns=answerNote&&n===answerNote.n&&oct===answerNote.o&&isNatural;
+      const isTarget=isQuestionTarget(n,oct)&&isNatural;
       const d=document.createElement('div');
       d.id='key-w-'+n+oct;
       d.style.cssText=`position:absolute;left:${x}px;top:0;width:${WW-1}px;height:${WH}px;`
@@ -1029,6 +1101,7 @@ function renderKeyboard(answerNote){
       d.addEventListener('touchstart',e=>{e.preventDefault();selectNote(n);},{passive:false});
       wrap.appendChild(d);
       if(isAns) answerDiv=d;
+      if(isTarget) targetDiv=d;
     });
   });
 
@@ -1045,6 +1118,10 @@ function renderKeyboard(answerNote){
         (useSharp&&answerNote.n===bk.sharpBase) ||
         (useFlat&&answerNote.n===bk.flatBase)
       );
+      const isTarget=currentNote&&currentNote.o===oct&&(
+        (useSharp&&currentNote.n===bk.sharpBase) ||
+        (useFlat&&currentNote.n===bk.flatBase)
+      );
       const d=document.createElement('div');
       d.id='key-b-'+bk.sharpBase+oct;
       d.style.cssText=`position:absolute;left:${x}px;top:0;width:${BW}px;height:${BH}px;`
@@ -1059,22 +1136,25 @@ function renderKeyboard(answerNote){
       d.addEventListener('touchstart',e=>{e.preventDefault();selectNote(selectValue,displayValue);},{passive:false});
       wrap.appendChild(d);
       if(isAns) answerDiv=d;
+      if(isTarget) targetDiv=d;
     });
   });
 
-  // Auto-scroll to answer key
-  if(answerDiv){
-    const wrapEl=document.getElementById('keyboard-wrap');
-    const keyLeft=parseInt(answerDiv.style.left)||0;
-    const keyW=parseInt(answerDiv.style.width)||WW;
-    const wrapW=wrapEl.clientWidth;
-    // Center the key in the visible area
-    wrapEl.scrollLeft=keyLeft - wrapW/2 + keyW/2;
+  if(!wrapEl) return;
+
+  if(keyboardAutoPosition){
+    const moveTo=answerDiv||targetDiv;
+    if(moveTo){
+      const keyLeft=parseInt(moveTo.style.left)||0;
+      const keyW=parseInt(moveTo.style.width)||WW;
+      const wrapW=wrapEl.clientWidth;
+      wrapEl.scrollLeft=keyLeft - wrapW/2 + keyW/2;
+    } else {
+      const c4x=(octaves.indexOf(4)*7)*WW;
+      wrapEl.scrollLeft=c4x - wrapEl.clientWidth/2 + WW*3;
+    }
   } else {
-    // Default: scroll to C4
-    const wrapEl=document.getElementById('keyboard-wrap');
-    const c4x=(octaves.indexOf(4)*7)*WW;
-    wrapEl.scrollLeft=c4x - wrapEl.clientWidth/2 + WW*3;
+    wrapEl.scrollLeft=keepScroll;
   }
 }
 
