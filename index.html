@@ -725,6 +725,92 @@ input[type="range"]{accent-color:#7DB7FF;}
   .mobile-focus-toggle{display:none;}
 }
 
+
+/* v50 mobile order fix:
+   Score must be visible above keyboard, not hidden behind sticky/nav.
+   Core order: score -> next -> keyboard -> check -> other commands. */
+@media (max-width:720px){
+  body.mobile-practice-active .staff-card{
+    position:relative!important;
+    top:auto!important;
+    z-index:auto!important;
+    margin:0 0 8px!important;
+    padding:8px 10px 6px!important;
+    border-radius:18px!important;
+  }
+
+  body.mobile-practice-active svg.staff{
+    height:118px!important;
+    max-height:none!important;
+  }
+
+  body.mobile-practice-active .staff-skip-btn{
+    margin:6px 0 8px!important;
+    padding:10px 10px!important;
+  }
+
+  body.mobile-practice-active .keyboard-wrap{
+    margin:0 0 4px!important;
+    padding:8px 8px 7px!important;
+    border-radius:18px!important;
+  }
+
+  body.mobile-practice-active #keyboard-html{
+    height:78px!important;
+  }
+
+  body.mobile-practice-active .keyboard-scroll-rail{
+    margin:0 0 8px!important;
+    height:24px!important;
+  }
+
+  body.mobile-practice-active .chord-check-dock{
+    margin:8px 0!important;
+    padding:8px!important;
+  }
+
+  body.mobile-practice-active .chord-check-dock-row{
+    display:grid!important;
+    grid-template-columns:1fr 1fr;
+    gap:8px!important;
+  }
+
+  body.mobile-practice-active .chord-check-status{
+    grid-column:1 / -1;
+  }
+
+  body.mobile-practice-active .chord-check-btn{
+    grid-column:1 / -1;
+    order:1;
+    padding:12px 12px!important;
+  }
+
+  body.mobile-practice-active .chord-undo-btn{
+    padding:9px 8px!important;
+  }
+
+  body.mobile-practice-active .feedback-bar{
+    margin:8px 0!important;
+    min-height:34px!important;
+  }
+
+  body.mobile-practice-active .note-buttons{
+    margin:8px 0!important;
+  }
+
+  body.mobile-practice-active .keyboard-mode-bar{
+    margin:8px 0 6px!important;
+  }
+
+  body.mobile-practice-active .mobile-focus-toggle{
+    display:none!important;
+  }
+
+  body.mobile-practice-active .nav{
+    min-height:54px!important;
+  }
+}
+
 </style>
 </head>
 <body>
@@ -870,7 +956,25 @@ input[type="range"]{accent-color:#7DB7FF;}
   </div>
 
   <button class="staff-skip-btn" onclick="nextQuestion()">次の問題へ / Skip →</button>
-  <button class="mobile-focus-toggle" id="mobile-focus-toggle" onclick="toggleMobilePracticeMode()">楽譜固定モード / Score Fixed</button>
+
+  <!-- piano keyboard: placed directly under score on mobile/desktop -->
+  <div class="keyboard-wrap mobile-lift" id="keyboard-wrap">
+    <div id="keyboard-html" style="position:relative;height:88px;user-select:none;"></div>
+  </div>
+  <div class="keyboard-scroll-rail" id="keyboard-scroll-rail" aria-label="Keyboard scroll rail">
+    <div class="keyboard-scroll-thumb" id="keyboard-scroll-thumb"></div>
+  </div>
+
+  <!-- answer check immediately under keyboard -->
+  <div class="chord-check-dock" id="chord-check-dock">
+    <div class="chord-check-dock-row">
+      <div class="chord-check-status" id="chord-check-status">重音 選択: 0 / 2</div>
+      <button class="chord-check-btn" onclick="submitChordAnswer()">ここで答え合わせ / Check</button>
+      <button class="chord-undo-btn" onclick="undoLastChordPitch()">最後の音を消す</button>
+      <button class="chord-undo-btn" onclick="prevChordSeqReview()">前の束</button>
+      <button class="chord-undo-btn" onclick="nextChordSeqReview()">次の束</button>
+    </div>
+  </div>
 
   <div class="feedback-bar wait" id="feedback">音名ボタンまたは鍵盤をタップ</div>
 
@@ -885,29 +989,13 @@ input[type="range"]{accent-color:#7DB7FF;}
     <button class="note-btn" onclick="selectNote('B')"><span class="en">B</span><span class="jp">シ</span></button>
   </div>
 
-  <!-- piano keyboard -->
-  <div class="chord-check-dock" id="chord-check-dock">
-    <div class="chord-check-dock-row">
-      <div class="chord-check-status" id="chord-check-status">重音 選択: 0 / 2</div>
-      <button class="chord-undo-btn" onclick="undoLastChordPitch()">最後の音を消す</button>
-      <button class="chord-undo-btn" onclick="prevChordSeqReview()">前の束</button>
-      <button class="chord-check-btn" onclick="submitChordAnswer()">ここで答え合わせ / Check</button>
-      <button class="chord-undo-btn" onclick="nextChordSeqReview()">次の束</button>
-    </div>
-  </div>
-
+  <!-- other commands below the core score/keyboard/check flow -->
   <div class="keyboard-mode-bar compact">
     <div>
       <div class="keyboard-mode-label">Keyboard Position — 鍵盤位置</div>
       <div class="keyboard-mode-help" id="keyboard-mode-help">設問の音に合わせて鍵盤を自動で中央へ動かします</div>
     </div>
     <button class="keyboard-mode-btn auto" id="keyboard-mode-btn" onclick="toggleKeyboardMode()">AUTO POSITION</button>
-  </div>
-  <div class="keyboard-wrap mobile-lift" id="keyboard-wrap">
-    <div id="keyboard-html" style="position:relative;height:88px;user-select:none;"></div>
-  </div>
-  <div class="keyboard-scroll-rail" id="keyboard-scroll-rail" aria-label="Keyboard scroll rail">
-    <div class="keyboard-scroll-thumb" id="keyboard-scroll-thumb"></div>
   </div>
 
   <button class="skip-btn" onclick="nextQuestion()">スキップ / Skip →</button>
@@ -3522,8 +3610,8 @@ function applyMobilePracticeMode(){
   const btn=document.getElementById('mobile-focus-toggle');
   if(btn){
     btn.textContent=mobilePracticeMode
-      ? '楽譜固定中 / Score Fixed ON'
-      : '楽譜固定モード / Score Fixed';
+      ? 'スマホ練習レイアウト ON'
+      : 'スマホ練習レイアウト';
   }
   setTimeout(()=>{ renderStaff(); updateKeyboardScrollRail(); },60);
 }
