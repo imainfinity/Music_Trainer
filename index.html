@@ -643,6 +643,25 @@ input[type="range"]{accent-color:#7DB7FF;}
 .tip-assist-box.show{display:block;}
 .tip-assist-title{font-family:var(--mono);font-size:10px;letter-spacing:.08em;color:#FFE2A6;margin-bottom:4px;}
 .keyboard-tip-zone{position:absolute;top:0;bottom:0;border:2px solid rgba(247,185,85,.72);background:rgba(247,185,85,.14);border-radius:8px;pointer-events:none;z-index:9;box-shadow:0 0 0 4px rgba(247,185,85,.08);}
+
+.time-duration-range{width:100%;margin:8px 0 4px;accent-color:#7DB7FF;}
+.time-duration-scale{display:flex;justify-content:space-between;width:100%;font-family:var(--mono);font-size:9px;color:rgba(246,241,231,.42);}
+.result-modal-backdrop{display:none;position:fixed;inset:0;z-index:999;background:rgba(0,0,0,.64);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);align-items:center;justify-content:center;padding:18px;}
+.result-modal-backdrop.show{display:flex;}
+.result-modal{width:min(560px,100%);max-height:88vh;overflow:auto;border-radius:24px;background:linear-gradient(180deg,rgba(31,34,44,.98),rgba(15,16,22,.98));border:1px solid rgba(255,255,255,.14);box-shadow:0 30px 90px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.10);padding:18px;color:var(--ink);}
+.result-modal-title{font-family:var(--serif);font-size:26px;margin-bottom:6px;color:#FFF7EA;}
+.result-modal-sub{font-family:var(--mono);font-size:11px;color:rgba(246,241,231,.56);margin-bottom:14px;}
+.result-kpi-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:12px 0;}
+.result-kpi{padding:12px;border-radius:16px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.10);text-align:center;}
+.result-kpi strong{display:block;font-family:var(--mono);font-size:22px;color:#FFF7EA;}
+.result-kpi span{display:block;margin-top:3px;font-size:10px;color:rgba(246,241,231,.46);font-family:var(--mono);letter-spacing:.05em;}
+.result-section{margin-top:12px;padding:12px;border-radius:16px;background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.09);font-size:13px;line-height:1.65;color:rgba(246,241,231,.82);}
+.result-section-title{font-family:var(--mono);font-size:11px;color:#FFE2A6;letter-spacing:.08em;margin-bottom:5px;}
+.result-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;}
+.result-actions button{flex:1;min-width:130px;border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:12px 14px;font-family:var(--mono);font-weight:700;cursor:pointer;color:#fff;background:rgba(255,255,255,.09);}
+.result-actions button.primary{background:linear-gradient(135deg,#4777FF,#7D5DFF);box-shadow:0 14px 34px rgba(71,119,255,.22);}
+.result-actions button.secondary{color:rgba(246,241,231,.78);}
+@media (max-width:720px){.result-kpi-grid{grid-template-columns:1fr 1fr}.result-modal-title{font-size:22px}.result-actions{flex-direction:column}.result-actions button{width:100%;}}
 .page-indicator{font-family:var(--mono);font-size:11px;fill:#5A5550;font-weight:700;}
 
 /* Mobile sight-reading layout:
@@ -969,12 +988,12 @@ input[type="range"]{accent-color:#7DB7FF;}
         </div>
         <div class="time-attack-box">
           <div class="time-attack-head"><span>TIME ATTACK</span><strong class="time-attack-time" id="time-attack-display">READY</strong></div>
+          <input id="time-duration-range" class="time-duration-range" type="range" min="60" max="600" step="30" value="180" oninput="setTimeAttackDuration(this.value)">
+          <div class="time-duration-scale"><span>60s</span><span>10min</span></div>
           <div class="time-attack-actions">
-            <button class="challenge-btn active" id="time-duration-60" onclick="setTimeAttackDuration(60)">60s</button>
-            <button class="challenge-btn" id="time-duration-180" onclick="setTimeAttackDuration(180)">3m</button>
             <button class="challenge-btn primary" id="time-attack-start-btn" onclick="toggleTimeAttack()">START</button>
+            <button class="challenge-btn" onclick="showPracticeDiagnostic()">診断 / CHECK</button>
             <button class="challenge-btn" onclick="toggleLogView()">LOG</button>
-            <button class="challenge-btn" onclick="saveDailyLogManual()">SAVE</button>
           </div>
         </div>
       </div>
@@ -1180,7 +1199,8 @@ let fiveFingerMode=true;
 let sequenceLength=5;
 let difficultyLevel=1;
 let currentSequenceTargetLength=5;
-let timeAttackDurationSec=60;
+let timeAttackDurationSec=180;
+let pendingResultRecord=null;
 let timeAttackActive=false;
 let tipAssistTimer=null;
 let tipAssistShown=false;
@@ -2529,9 +2549,9 @@ function submitChordAnswer(autoTriggered=false){
   updateChordPanel();
 
   const nextBtn=document.getElementById('next-btn');
-  if(autoAdvance){
+  if(shouldAutoMoveNext()){
     nextBtn.style.display='none';
-    autoTimer=setTimeout(()=>{ if(answered&&reviewingIdx===null) nextQuestion(); },1500);
+    autoTimer=setTimeout(()=>{ if(answered&&reviewingIdx===null&&!document.getElementById('result-modal-backdrop')?.classList.contains('show')) nextQuestion(); },timeAttackActive?450:1500);
   }else{
     nextBtn.style.display='block';
   }
@@ -2850,7 +2870,7 @@ function nextQuestion(){
     fb.textContent='';
     fb.className='feedback-bar wait compact-hide';
   }else if(questionMode==='chordseq'){
-    fb.textContent=`重音連続 1/${currentChordSequence.length} — Checkで束ごとに判定し、緑/赤を付けて次へ`;
+    fb.textContent=`重音連続 1/${currentChordSequence.length} — 必要音数を選ぶと自動判定して次へ`;
     fb.className='feedback-bar wait';
   }else if(questionMode==='sequence'){
     fb.textContent=`単音連続 1/${currentSequence.length} — 難易度 Lv.${difficultyLevel} / ${sequenceLength==='random'?'ランダム':currentSequenceTargetLength+'問'}`;
@@ -2906,9 +2926,9 @@ function selectNote(n,displayLabel=n){
       if(history.length>10) history.pop();
       renderHistory();
       const nextBtn=document.getElementById('next-btn');
-      if(autoAdvance){
+      if(shouldAutoMoveNext()){
         nextBtn.style.display='none';
-        autoTimer=setTimeout(()=>{ if(answered&&reviewingIdx===null) nextQuestion(); },1500);
+        autoTimer=setTimeout(()=>{ if(answered&&reviewingIdx===null&&!document.getElementById('result-modal-backdrop')?.classList.contains('show')) nextQuestion(); },timeAttackActive?450:1500);
       }else{
         nextBtn.style.display='block';
       }
@@ -2950,9 +2970,9 @@ function selectNote(n,displayLabel=n){
   if(history.length>10) history.pop();
   renderHistory();
   const nextBtn=document.getElementById('next-btn');
-  if(autoAdvance){
+  if(shouldAutoMoveNext()){
     nextBtn.style.display='none';
-    autoTimer=setTimeout(()=>{ if(answered&&reviewingIdx===null) nextQuestion(); },1200);
+    autoTimer=setTimeout(()=>{ if(answered&&reviewingIdx===null&&!document.getElementById('result-modal-backdrop')?.classList.contains('show')) nextQuestion(); },timeAttackActive?450:1200);
   } else {
     nextBtn.style.display='block';
   }
@@ -3600,18 +3620,16 @@ function getDailyLogs(){try{return JSON.parse(localStorage.getItem('musicTrainer
 function setDailyLogs(logs){localStorage.setItem('musicTrainerDailyLogs',JSON.stringify(logs.slice(0,365)));}
 
 function setTimeAttackDuration(sec){
-  timeAttackDurationSec=sec;
-  localStorage.setItem('musicTrainerTimeAttackDuration',String(sec));
-  [60,180].forEach(v=>{
-    const btn=document.getElementById('time-duration-'+v);
-    if(btn) btn.classList.toggle('active',v===sec);
-  });
+  timeAttackDurationSec=Math.max(60,Math.min(600,parseInt(sec,10)||180));
+  localStorage.setItem('musicTrainerTimeAttackDuration',String(timeAttackDurationSec));
+  const range=document.getElementById('time-duration-range');
+  if(range) range.value=String(timeAttackDurationSec);
   updateChallengeStatus();
 }
 
 function initTimeAttackDuration(){
-  const saved=parseInt(localStorage.getItem('musicTrainerTimeAttackDuration')||'60',10);
-  setTimeAttackDuration([60,180].includes(saved)?saved:60);
+  const saved=parseInt(localStorage.getItem('musicTrainerTimeAttackDuration')||'180',10);
+  setTimeAttackDuration(saved);
 }
 
 function toggleTimeAttack(){
@@ -3627,6 +3645,81 @@ function formatRemain(sec){
   const m=Math.floor(sec/60);
   const s=sec%60;
   return m>0?`${m}:${String(s).padStart(2,'0')}`:`${s}s`;
+}
+
+function shouldAutoMoveNext(){
+  return autoAdvance || timeAttackActive;
+}
+
+function timeAttackQuestionsPerMinute(record){
+  const sec=Math.max(1,record.durationSec||challengeDurationSec||timeAttackDurationSec||60);
+  return Math.round((record.total||0)*60/sec*10)/10;
+}
+
+function buildResultAdvice(record){
+  const acc=record.accuracy||0;
+  const weak=getWeakPointSummary();
+  let improve='弱点データは蓄積中です。';
+  if(weak && !weak.includes('蓄積中')) improve=weak.replace('Weak point:','');
+  let advice='まずは譜面を見てから鍵盤に降りるまでの時間を短くしましょう。';
+  if(record.total===0){
+    advice='今回は回答データがありません。START後は次の問題ボタンに頼らず、出た音を連続で処理してください。';
+  }else if(acc>=95){
+    advice='非常に良いです。次は難易度を1つ上げるか、時間を少し短くして反応速度を鍛えてください。';
+  }else if(acc>=80){
+    advice='合格ラインです。ミスした音型だけをLOGで確認し、同じ調号でもう1本こなすと安定します。';
+  }else if(acc>=60){
+    advice='正解率は伸びしろがあります。速度よりも、線・間と鍵盤エリアの対応を先に固定してください。TIP ONで迷う箇所を確認すると良いです。';
+  }else{
+    advice='まだ速度を上げる段階ではありません。5問・低めの難易度で、押す前に音名を頭の中で言う練習に戻してください。';
+  }
+  if(questionMode==='chordseq') advice += ' 重音は一番低い音を先に決めると、束全体の位置が安定します。';
+  return {improve,advice};
+}
+
+function showResultModal(record,opts={}){
+  pendingResultRecord=record;
+  const modal=document.getElementById('result-modal-backdrop');
+  if(!modal) return;
+  const title=document.getElementById('result-modal-title');
+  const sub=document.getElementById('result-modal-sub');
+  const acc=document.getElementById('result-kpi-acc');
+  const score=document.getElementById('result-kpi-score');
+  const speed=document.getElementById('result-kpi-speed');
+  const improve=document.getElementById('result-improve');
+  const advice=document.getElementById('result-advice');
+  const saveBtn=document.getElementById('result-save-btn');
+  const qpm=timeAttackQuestionsPerMinute(record);
+  if(title) title.textContent=opts.title||'Training Result';
+  if(sub) sub.textContent=`${record.mode==='chordseq'?'Chord Seq':'Melody Seq'} / ${record.key||activeKeySig().label} / 難易度 Lv.${record.difficultyLevel||difficultyLevel} / ${record.durationSec?formatRemain(record.durationSec):'Timerなし'}`;
+  if(acc) acc.textContent=(record.total?record.accuracy:'—')+(record.total?'%':'');
+  if(score) score.textContent=`${record.correct||0}/${record.total||0}`;
+  if(speed) speed.textContent=record.total?`${qpm}/min`:'—';
+  const a=buildResultAdvice(record);
+  if(improve) improve.textContent=a.improve;
+  if(advice) advice.textContent=a.advice;
+  if(saveBtn) saveBtn.style.display=opts.allowSave===false?'none':'';
+  modal.classList.add('show');
+}
+
+function closeResultModal(moveNext=true){
+  const modal=document.getElementById('result-modal-backdrop');
+  if(modal) modal.classList.remove('show');
+  pendingResultRecord=null;
+  if(moveNext) nextQuestion();
+}
+
+function savePendingResultAndClose(){
+  if(pendingResultRecord){
+    saveDailyRecord(pendingResultRecord);
+    renderDailyLog(true);
+  }
+  closeResultModal(true);
+}
+
+function showPracticeDiagnostic(){
+  const record={date:todayKey(),endedAt:new Date().toISOString(),durationSec:0,mode:questionMode,clefMode,key:activeKeySig().label,seqLen:questionMode==='sequence'?currentSequenceTargetLength:currentChordSequence.length,correct:stats.correct,total:stats.total,accuracy:stats.total?Math.round(stats.correct/stats.total*100):0,difficultyLevel};
+  showResultModal(record,{title:'Practice Check',allowSave:true});
 }
 
 function getCurrentTargetForTip(){
@@ -3712,7 +3805,7 @@ function updateChallengeStatus(){
     displayText=timerText;
   }
   const display=document.getElementById('time-attack-display');
-  if(display) display.textContent=timeAttackActive?displayText:'READY';
+  if(display) display.textContent=timeAttackActive?displayText:formatRemain(timeAttackDurationSec);
   const startBtn=document.getElementById('time-attack-start-btn');
   if(startBtn){
     startBtn.textContent=timeAttackActive?'STOP':'START';
@@ -3736,6 +3829,7 @@ function startChallengeTimer(sec){
   clearInterval(challengeTimer);
   challengeTimer=setInterval(()=>{updateChallengeStatus();if(Date.now()>=challengeEndAt)finishChallengeTimer();},250);
   updateChallengeStatus();
+  nextQuestion();
 }
 function stopChallengeTimer(){
   clearInterval(challengeTimer);
@@ -3748,10 +3842,10 @@ function finishChallengeTimer(){
   const start=challengeStartStats||{correct:0,total:0,startedAt:new Date().toISOString()};
   const deltaTotal=Math.max(0,stats.total-start.total);
   const deltaCorrect=Math.max(0,stats.correct-start.correct);
-  const record={date:todayKey(),endedAt:new Date().toISOString(),durationSec:challengeDurationSec,mode:questionMode,clefMode,key:activeKeySig().label,seqLen:questionMode==='sequence'?currentSequenceTargetLength:null,correct:deltaCorrect,total:deltaTotal,accuracy:deltaTotal?Math.round(deltaCorrect/deltaTotal*100):0};
-  if(challengeLogging) saveDailyRecord(record);
+  const record={date:todayKey(),endedAt:new Date().toISOString(),durationSec:challengeDurationSec,mode:questionMode,clefMode,key:activeKeySig().label,seqLen:questionMode==='sequence'?currentSequenceTargetLength:(currentChordSequence.length||currentSequenceTargetLength),correct:deltaCorrect,total:deltaTotal,accuracy:deltaTotal?Math.round(deltaCorrect/deltaTotal*100):0,difficultyLevel};
   challengeEndAt=0;challengeStartStats=null;timeAttackActive=false;
   updateChallengeStatus();renderDailyLog();
+  showResultModal(record,{title:'Time Attack Result',allowSave:true});
 }
 function saveDailyRecord(record){
   const logs=getDailyLogs();
