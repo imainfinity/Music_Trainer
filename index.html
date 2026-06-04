@@ -466,6 +466,8 @@ svg.staff{height:190px;filter:drop-shadow(0 10px 20px rgba(0,0,0,.08));}
 .chord-check-status{font-size:12px;color:rgba(246,241,231,.66);font-family:var(--mono);}
 .chord-check-btn{flex:1;border:1px solid rgba(255,255,255,.18);background:linear-gradient(135deg,#4777FF,#7D5DFF);color:#fff;border-radius:999px;padding:11px 14px;font-size:13px;font-family:var(--mono);font-weight:700;cursor:pointer;box-shadow:0 12px 30px rgba(71,119,255,.18);}
 .chord-check-btn:hover{transform:translateY(-1px);filter:brightness(1.04);}
+/* Auto-answer mode: chord sequence advances after the required notes are selected. */
+.chord-check-btn{display:none!important;}
 @media (max-width:720px){
   .chord-check-dock-row{flex-direction:column;align-items:stretch;}
   .chord-check-status{text-align:left;}
@@ -1172,6 +1174,8 @@ let chordSequenceResults=[];
 let chordSequenceSelections=[];
 let chordSequenceReviewIndex=0;
 let lastChordSubmitAt=0;
+let chordAutoSubmitTimer=null;
+let chordAutoSubmitting=false;
 let fiveFingerMode=true;
 let sequenceLength=5;
 let difficultyLevel=1;
@@ -1873,7 +1877,8 @@ function updateChordPitchRow(){
 }
 
 function removeChordPitch(key){
-  if(answered||!(questionMode==='chord'||questionMode==='chordseq')) return;
+  if(answered||chordAutoSubmitting||!(questionMode==='chord'||questionMode==='chordseq')) return;
+  cancelChordAutoSubmit();
   chordPitchSelection.delete(key);
   chordPitchOrder=chordPitchOrder.filter(k=>k!==key);
   renderKeyboard(null);
@@ -1881,15 +1886,34 @@ function removeChordPitch(key){
 }
 
 function undoLastChordPitch(){
-  if(answered||!(questionMode==='chord'||questionMode==='chordseq')) return;
+  if(answered||chordAutoSubmitting||!(questionMode==='chord'||questionMode==='chordseq')) return;
   const key=chordPitchOrder.pop();
   if(key) chordPitchSelection.delete(key);
   renderKeyboard(null);
   updateChordPanel();
 }
 
+function cancelChordAutoSubmit(){
+  if(chordAutoSubmitTimer){
+    clearTimeout(chordAutoSubmitTimer);
+    chordAutoSubmitTimer=null;
+  }
+}
+
+function scheduleChordAutoSubmit(){
+  if(answered||chordAutoSubmitting||!(questionMode==='chord'||questionMode==='chordseq')) return;
+  cancelChordAutoSubmit();
+  chordAutoSubmitTimer=setTimeout(()=>{
+    chordAutoSubmitTimer=null;
+    if(answered||chordAutoSubmitting) return;
+    if(chordPitchSelection.size>=currentChordSize){
+      submitChordAnswer(true);
+    }
+  },180);
+}
+
 function toggleChordPitch(note){
-  if(answered||!(questionMode==='chord'||questionMode==='chordseq')) return;
+  if(answered||chordAutoSubmitting||!(questionMode==='chord'||questionMode==='chordseq')) return;
   const key=pitchKey(note);
   if(chordPitchSelection.has(key)){
     chordPitchSelection.delete(key);
@@ -1901,6 +1925,7 @@ function toggleChordPitch(note){
   }
   renderKeyboard(null);
   updateChordPanel();
+  if(chordPitchSelection.size>=currentChordSize) scheduleChordAutoSubmit();
 }
 
 function pickVoicingType(){
@@ -2270,7 +2295,7 @@ function updateChordCheckDock(){
         seqText=` ${Math.min(chordSequenceIndex+1,Math.max(1,currentChordSequence.length))}/${Math.max(1,currentChordSequence.length)} /`;
       }
     }
-    status.textContent=`重音${seqText} 選択: ${chordPitchSelection.size} / ${currentChordSize}`;
+    status.textContent=`重音${seqText} 選択: ${chordPitchSelection.size} / ${currentChordSize}　※選択完了で自動判定`;
   }
 }
 
@@ -2300,7 +2325,8 @@ function updateChordPanel(){
 }
 
 function clearChordSelection(){
-  if(answered) return;
+  if(answered||chordAutoSubmitting) return;
+  cancelChordAutoSubmit();
   chordSelection.clear();
   chordPitchSelection.clear();
   chordPitchOrder=[];
@@ -2320,13 +2346,15 @@ function toggleChordSelection(n){
   updateChordPanel();
 }
 
-function submitChordAnswer(){
+function submitChordAnswer(autoTriggered=false){
   hideTipAssist();
   const now=Date.now();
   if(now-lastChordSubmitAt<220) return;
   lastChordSubmitAt=now;
 
   if(!(questionMode==='chord'||questionMode==='chordseq')||answered||!currentChord) return;
+  chordAutoSubmitting=true;
+  cancelChordAutoSubmit();
 
   const fb=document.getElementById('feedback');
   if(fb) fb.classList.remove('compact-hide');
@@ -2360,32 +2388,38 @@ function submitChordAnswer(){
       }catch(e){ console.warn('weakpoint record skipped',e); }
       updateStats();
 
-      // If there is a next bundle, advance immediately.
+      // Show correct / wrong colors briefly, then advance automatically.
       if(idx < seqLen-1){
         const nextIdx=idx+1;
-        chordSequenceIndex=nextIdx;
-        currentChord=currentChordSequence[nextIdx];
-        currentNote=(currentChord.notes&&currentChord.notes[0])||currentNote;
-        currentChordSize=(currentChord.notes&&currentChord.notes.length)||currentChordSize;
-        chordPitchSelection.clear();
-        chordPitchOrder=[];
-        keyboardAutoPositionPending=true;
-
         if(fb){
           fb.textContent=`${bundleResult.correct?'✓':'✗'} 束 ${idx+1}/${seqLen} ${bundleResult.correct?'正解':'不正解'} → ${nextIdx+1}束目へ`;
           fb.className=bundleResult.correct?'feedback-bar ok':'feedback-bar ng';
         }
-
-        renderStaff();
-        renderKeyboard(null);
+        renderKeyboard(currentChord.notes,bundleResult.wrongPitchNotes||[]);
         updateChordPanel();
         updateChordCheckDock();
-        updateKeyboardScrollRail();
-        scheduleTipAssist();
+
+        setTimeout(()=>{
+          chordSequenceIndex=nextIdx;
+          currentChord=currentChordSequence[nextIdx];
+          currentNote=(currentChord.notes&&currentChord.notes[0])||currentNote;
+          currentChordSize=(currentChord.notes&&currentChord.notes.length)||currentChordSize;
+          chordPitchSelection.clear();
+          chordPitchOrder=[];
+          keyboardAutoPositionPending=true;
+          chordAutoSubmitting=false;
+          renderStaff();
+          renderKeyboard(null);
+          updateChordPanel();
+          updateChordCheckDock();
+          updateKeyboardScrollRail();
+          scheduleTipAssist();
+        },620);
         return;
       }
 
-      // Last bundle: finish and enter review.
+      // Last bundle: show final colors, then finish and enter review.
+      renderKeyboard(currentChord.notes,bundleResult.wrongPitchNotes||[]);
       answered=true;
       const ok=chordSequenceResults.filter(r=>r&&r.correct).length;
 
@@ -2415,6 +2449,7 @@ function submitChordAnswer(){
       chordPitchOrder=[];
       chordSequenceReviewIndex=0;
       reviewChordSeqBundle(0);
+      chordAutoSubmitting=false;
 
       const nextBtn=document.getElementById('next-btn');
       if(nextBtn) nextBtn.style.display=autoAdvance?'none':'block';
@@ -2422,6 +2457,7 @@ function submitChordAnswer(){
 
     }catch(err){
       console.error('Chord sequence check failed hard:',err);
+      chordAutoSubmitting=false;
       // Hard fallback: force advance so the UI never gets stuck.
       if(chordSequenceIndex < currentChordSequence.length-1){
         chordSequenceIndex++;
@@ -2767,6 +2803,8 @@ function getWeakPointSummary(){
 }
 
 function nextQuestion(){
+  cancelChordAutoSubmit();
+  chordAutoSubmitting=false;
   clearTimeout(autoTimer);
   reviewingIdx=null;
   answered=false;
