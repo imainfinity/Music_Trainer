@@ -2006,32 +2006,33 @@ function submitChordAnswer(){
     currentChord.notes.forEach(n=>recordWeakPoint(n,(bundleResult.selected||[]).join('|'),bundleResult.correct,questionMode));
     updateStats();
 
-    renderStaff();
-    renderKeyboard(currentChord.notes,bundleResult.wrongPitchNotes||[]);
-
     if(chordSequenceIndex < currentChordSequence.length-1){
+      const justCheckedIndex=chordSequenceIndex;
       const wasCorrect=bundleResult.correct;
-      fb.textContent=`${wasCorrect?'✓':'✗'} 束 ${chordSequenceIndex+1}/${currentChordSequence.length} ${wasCorrect?'正解':'不正解'} → 次の束へ`;
-      fb.className=wasCorrect?'feedback-bar ok':'feedback-bar ng';
 
+      // Move immediately to the next bundle.
+      // Previous bundle stays green/red on the staff; current bundle becomes blue.
       chordSequenceIndex++;
       currentChord=currentChordSequence[chordSequenceIndex];
       currentNote=currentChord.notes[0];
+      currentChordSize=currentChord.notes.length;
       chordPitchSelection.clear();
       chordPitchOrder=[];
       keyboardAutoPositionPending=true;
 
-      // Re-render after advancing so the previous bundle remains green/red and current bundle is blue.
-      setTimeout(()=>{
-        if(questionMode==='chordseq'&&!answered){
-          renderStaff();
-          renderKeyboard(null);
-          updateChordPanel();
-          updateChordSequenceFeedback();
-        }
-      },180);
+      fb.textContent=`${wasCorrect?'✓':'✗'} 束 ${justCheckedIndex+1}/${currentChordSequence.length} ${wasCorrect?'正解':'不正解'} → ${chordSequenceIndex+1}束目へ`;
+      fb.className=wasCorrect?'feedback-bar ok':'feedback-bar ng';
+
+      renderStaff();
+      renderKeyboard(null);
+      updateChordPanel();
+      updateChordCheckDock();
+      updateChordSequenceFeedback();
       return;
     }
+
+    renderStaff();
+    renderKeyboard(currentChord.notes,bundleResult.wrongPitchNotes||[]);
 
     answered=true;
     const ok=chordSequenceResults.filter(r=>r&&r.correct).length;
@@ -2305,8 +2306,11 @@ function updateChordSequenceFeedback(){
   const fb=document.getElementById('feedback');
   if(questionMode!=='chordseq'||!fb) return;
   const total=currentChordSequence.length;
-  fb.textContent=`重音連続 ${chordSequenceIndex+1}/${total} — Checkで束ごとに判定し、緑/赤を付けて次へ`;
-  fb.className='feedback-bar wait';
+  // Do not overwrite the green/red result message immediately after advancing.
+  if(!fb.textContent.includes('→')){
+    fb.textContent=`重音連続 ${chordSequenceIndex+1}/${total} — Checkで束ごとに判定し、緑/赤を付けて次へ`;
+    fb.className='feedback-bar wait';
+  }
 }
 
 function generateSequenceQuestion(){
