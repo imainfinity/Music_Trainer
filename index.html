@@ -623,6 +623,14 @@ input[type="range"]{accent-color:#7DB7FF;}
 }
 
 
+
+.difficulty-box{width:100%;margin-top:8px;padding:10px 11px;border-radius:16px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);}
+.difficulty-head{display:flex;align-items:center;justify-content:space-between;gap:10px;font-family:var(--mono);font-size:11px;color:rgba(246,241,231,.64);letter-spacing:.04em;}
+.difficulty-head strong{color:#FFF7EA;font-size:13px;}
+.difficulty-range{width:100%;margin:9px 0 5px;accent-color:#7DB7FF;}
+.difficulty-desc{font-size:11px;line-height:1.45;color:rgba(246,241,231,.62);}
+.page-indicator{font-family:var(--mono);font-size:11px;fill:#5A5550;font-weight:700;}
+
 /* Mobile sight-reading layout:
    Keep the score visible while the user is down at the keyboard. */
 @media (max-width:720px){
@@ -843,9 +851,7 @@ input[type="range"]{accent-color:#7DB7FF;}
   </div>
 
   <div class="settings-bar" style="margin-bottom:.75rem;">
-    <div class="stab active" id="qtab-single" onclick="setQuestionMode('single',this)">単音モード</div>
-    <div class="stab" id="qtab-sequence" onclick="setQuestionMode('sequence',this)">連続読み / 4-5 Notes</div>
-    <div class="stab" id="qtab-chord" onclick="setQuestionMode('chord',this)">重音 / Chord</div>
+    <div class="stab active" id="qtab-sequence" onclick="setQuestionMode('sequence',this)">単音連続 / Melody Seq</div>
     <div class="stab" id="qtab-chordseq" onclick="setQuestionMode('chordseq',this)">重音連続 / Chord Seq</div>
   </div>
 
@@ -891,11 +897,11 @@ input[type="range"]{accent-color:#7DB7FF;}
         <button class="challenge-btn" id="log-toggle-btn" onclick="toggleDailyLogging()">LOG OFF</button>
         <button class="challenge-btn active" id="finger-toggle-btn" onclick="toggleFiveFingerMode()">5-FINGER ON</button>
         <span class="seq-len-row">
-          <span class="seq-len-label">SEQ</span>
-          <button class="challenge-btn active" id="seq-len-5" onclick="setSequenceLength(5)">5</button>
-          <button class="challenge-btn" id="seq-len-random" onclick="setSequenceLength('random')">2-5</button>
+          <span class="seq-len-label">問題数</span>
+          <button class="challenge-btn active" id="seq-len-5" onclick="setSequenceLength(5)">5問</button>
+          <button class="challenge-btn" id="seq-len-random" onclick="setSequenceLength('random')">ランダム</button>
           <span class="seq-mode-sep"></span>
-          <button class="challenge-btn" id="seq-len-10" onclick="setSequenceLength(10)">10</button>
+          <button class="challenge-btn" id="seq-len-10" onclick="setSequenceLength(10)">10問</button>
           <button class="challenge-btn" id="seq-len-15" onclick="setSequenceLength(15)">15</button>
           <button class="challenge-btn" id="seq-len-20" onclick="setSequenceLength(20)">20</button>
         </span>
@@ -933,13 +939,18 @@ input[type="range"]{accent-color:#7DB7FF;}
       <div class="practice-subline" id="practice-chord-summary">重音設定</div>
     </div>
     <div class="practice-card">
-      <div class="practice-card-title">TRAINING / LOG</div>
+      <div class="practice-card-title">連続出題数 / 難易度</div>
       <div class="practice-controls">
         <button class="challenge-btn" id="top-log-toggle-btn" onclick="toggleDailyLogging()">LOG OFF</button>
         <button class="challenge-btn active" id="top-finger-toggle-btn" onclick="toggleFiveFingerMode()">5-FINGER ON</button>
-        <button class="challenge-btn active" id="top-seq-len-5" onclick="setSequenceLength(5)">SEQ 5</button>
-        <button class="challenge-btn" id="top-seq-len-random" onclick="setSequenceLength('random')">SEQ 2-5</button>
-        <button class="challenge-btn" id="top-seq-len-10" onclick="setSequenceLength(10)">10</button>
+        <button class="challenge-btn active" id="top-seq-len-5" onclick="setSequenceLength(5)">5問</button>
+        <button class="challenge-btn" id="top-seq-len-random" onclick="setSequenceLength('random')">ランダム</button>
+        <button class="challenge-btn" id="top-seq-len-10" onclick="setSequenceLength(10)">10問</button>
+        <div class="difficulty-box">
+          <div class="difficulty-head"><span>難易度</span><strong id="difficulty-label">Lv.1 / 10</strong></div>
+          <input id="difficulty-range" class="difficulty-range" type="range" min="1" max="10" value="1" oninput="setDifficultyLevel(this.value)">
+          <div class="difficulty-desc" id="difficulty-desc">選択調号固定 / 5問 / 狭い音域</div>
+        </div>
         <button class="challenge-btn" onclick="startChallengeTimer(60)">60s</button>
         <button class="challenge-btn" onclick="startChallengeTimer(180)">3m</button>
         <button class="challenge-btn" onclick="stopChallengeTimer()">STOP</button>
@@ -1102,6 +1113,7 @@ const BASS_POOL=[
 
 let clefMode='both',currentClef='treble',currentNote=null,answered=false;
 let selectedKeySig=KEY_SIGS[DEFAULT_KEY_INDEX];
+let questionKeySig=null;
 let stats={correct:0,total:0,streak:0};
 let autoAdvance=true;
 let autoTimer=null;
@@ -1114,7 +1126,7 @@ let challengeTimer=null;
 let challengeEndAt=0;
 let challengeStartStats=null;
 let challengeDurationSec=0;
-let questionMode='single';
+let questionMode='sequence';
 let currentSequence=[];
 let sequenceIndex=0;
 let sequenceResults=[];
@@ -1126,6 +1138,7 @@ let chordSequenceReviewIndex=0;
 let lastChordSubmitAt=0;
 let fiveFingerMode=true;
 let sequenceLength=5;
+let difficultyLevel=1;
 let currentSequenceTargetLength=5;
 let chordSize=2;
 let currentChordSize=2;
@@ -1146,6 +1159,79 @@ function toggleAuto(){
   knob.style.left=autoAdvance?'18px':'2px';
   document.getElementById('next-btn').style.display='none';
   if(autoAdvance&&answered){ clearTimeout(autoTimer); nextQuestion(); }
+}
+
+function activeKeySig(){
+  return questionKeySig || selectedKeySig;
+}
+
+function keySigScore(ks){
+  if(!ks) return 0;
+  if(ks.sharps&&ks.sharps.length) return ks.sharps.length;
+  if(ks.flats&&ks.flats.length) return -ks.flats.length;
+  return 0;
+}
+
+function chooseQuestionKeySig(){
+  const lv=parseInt(difficultyLevel,10)||1;
+  if(lv>=10){
+    return KEY_SIGS[Math.floor(Math.random()*KEY_SIGS.length)];
+  }
+  if(lv>=9){
+    const base=keySigScore(selectedKeySig);
+    const related=KEY_SIGS.filter(ks=>Math.abs(keySigScore(ks)-base)<=1);
+    return related[Math.floor(Math.random()*related.length)] || selectedKeySig;
+  }
+  return selectedKeySig;
+}
+
+function difficultyText(){
+  const lv=parseInt(difficultyLevel,10)||1;
+  const map={
+    1:'選択調号固定 / 5問 / 狭い音域',
+    2:'選択調号固定 / 少し広い音域',
+    3:'選択調号固定 / 10問対応 / 5問ページ制',
+    4:'選択調号固定 / 音域広め',
+    5:'ト音・ヘ音ミックス強化',
+    6:'重音は3音以上も対応',
+    7:'臨時記号準備 / 反応速度重視',
+    8:'Open / Large Spread強化',
+    9:'選択調号 + 近親調',
+    10:'全調ランダム / 実戦モード'
+  };
+  return map[lv]||map[1];
+}
+
+function setDifficultyLevel(v,skipNext=false){
+  difficultyLevel=Math.max(1,Math.min(10,parseInt(v,10)||1));
+  localStorage.setItem('musicTrainerDifficultyLevel',String(difficultyLevel));
+  const range=document.getElementById('difficulty-range');
+  const label=document.getElementById('difficulty-label');
+  const desc=document.getElementById('difficulty-desc');
+  if(range) range.value=String(difficultyLevel);
+  if(label) label.textContent=`Lv.${difficultyLevel} / 10`;
+  if(desc) desc.textContent=difficultyText();
+  updatePracticeSummary();
+  if(!skipNext && (questionMode==='sequence'||questionMode==='chordseq')) nextQuestion();
+}
+
+function initDifficultyLevel(){
+  const saved=parseInt(localStorage.getItem('musicTrainerDifficultyLevel')||'1',10);
+  setDifficultyLevel(saved, true);
+}
+
+function tryAutoLevelUp(ok,total){
+  if(!total) return false;
+  const clear=ok/total>=0.8;
+  if(clear && difficultyLevel<10){
+    setDifficultyLevel(difficultyLevel+1,true);
+    return true;
+  }
+  return false;
+}
+
+function visiblePageStart(index){
+  return Math.floor(Math.max(0,index)/5)*5;
 }
 
 function ensureAudio(){
@@ -1198,7 +1284,7 @@ function updateSoundHelp(msg){
 
 async function preloadQuestionSamples(){
   if(!soundEnabled) return;
-  const list=(questionMode==='chord'&&currentChord)?currentChord.notes:(currentNote?[currentNote]:[]);
+  const list=((questionMode==='chord'||questionMode==='chordseq')&&currentChord)?currentChord.notes:(currentNote?[currentNote]:[]);
   const names=[...new Set(list.map(n=>sampleNameFromMidi(midiFromNote(n))))];
   try{
     await Promise.all(names.map(loadPianoSampleByName));
@@ -1227,8 +1313,9 @@ async function toggleSound(){
 function midiFromNote(note){
   const semis={C:0,D:2,E:4,F:5,G:7,A:9,B:11};
   let acc=0;
-  if(selectedKeySig&&selectedKeySig.sharps&&selectedKeySig.sharps.includes(note.n)) acc=1;
-  if(selectedKeySig&&selectedKeySig.flats&&selectedKeySig.flats.includes(note.n)) acc=-1;
+  const aks=activeKeySig();
+  if(aks&&aks.sharps&&aks.sharps.includes(note.n)) acc=1;
+  if(aks&&aks.flats&&aks.flats.includes(note.n)) acc=-1;
   return (note.o+1)*12 + semis[note.n] + acc;
 }
 
@@ -1311,13 +1398,13 @@ async function playCurrentQuestion(){
     return;
   }
   await preloadQuestionSamples();
-  if(questionMode==='chord'&&currentChord) playNotes(currentChord.notes,false);
+  if((questionMode==='chord'||questionMode==='chordseq')&&currentChord) playNotes(currentChord.notes,false);
   else if(currentNote) playNotes(currentNote,false);
 }
 
 function playAnswerSound(){
   if(!soundEnabled) return;
-  if(questionMode==='chord'&&currentChord) playNotes(currentChord.notes,false);
+  if((questionMode==='chord'||questionMode==='chordseq')&&currentChord) playNotes(currentChord.notes,false);
   else if(currentNote) playNotes(currentNote,false);
 }
 
@@ -1358,7 +1445,7 @@ function toggleKeyboardMode(){
       ? '設問の音に合わせて鍵盤を自動で中央へ動かします'
       : '鍵盤位置を固定し、自分で横スクロールします';
   }
-  renderKeyboard(answered?(questionMode==='chord'&&currentChord?currentChord.notes:currentNote):null);
+  renderKeyboard(answered?(((questionMode==='chord'||questionMode==='chordseq')&&currentChord)?currentChord.notes:currentNote):null);
 }
 
 function toggleKeyTip(){
@@ -1450,6 +1537,7 @@ function buildKeySigUI(){
     b.innerHTML=`<span class="ks-jp">${ks.jp}</span><span class="ks-major">${ks.major}</span><span class="ks-minor">${ks.minor}</span>`;
     b.onclick=()=>{
       selectedKeySig=ks;
+      questionKeySig=null;
       document.querySelectorAll('.ks-btn').forEach(x=>x.classList.remove('active'));
       b.classList.add('active');
       nextQuestion();
@@ -1467,6 +1555,8 @@ function showPage(p){
 }
 
 function setQuestionMode(mode,el){
+  if(mode==='single') mode='sequence';
+  if(mode==='chord') mode='chordseq';
   questionMode=mode;
   document.querySelectorAll('[id^=qtab-]').forEach(x=>x.classList.remove('active'));
   if(el) el.classList.add('active');
@@ -1512,8 +1602,9 @@ function noteToMidi(note){
   if(note&&typeof note.midi==='number') return note.midi;
   const semis={C:0,D:2,E:4,F:5,G:7,A:9,B:11};
   let acc=0;
-  if(selectedKeySig.sharps.includes(note.n)) acc=1;
-  if(selectedKeySig.flats.includes(note.n)) acc=-1;
+  const aks=activeKeySig();
+  if(aks.sharps.includes(note.n)) acc=1;
+  if(aks.flats.includes(note.n)) acc=-1;
   return (note.o+1)*12 + semis[note.n] + acc;
 }
 
@@ -1550,7 +1641,7 @@ function pitchLabel(note){
   if(!note) return '';
   if(note.physical&&note.label) return note.label;
 
-  const ks=selectedKeySig;
+  const ks=activeKeySig();
   const raw=`${note.n}${note.o}`;
   const midi=noteToMidi(note);
   const physical=midiToKeyboardLabel(midi);
@@ -1890,7 +1981,7 @@ function applyChordVoicing(notes,voicingType){
 }
 
 function getMajorRootLetter(){
-  const root=(selectedKeySig.label||'C').split('/')[0].trim();
+  const root=(activeKeySig().label||'C').split('/')[0].trim();
   return root.replace(/[#b♯♭]/g,'').charAt(0) || 'C';
 }
 
@@ -2084,7 +2175,7 @@ function generateChordQuestion(){
     voicingType,
     voicingLabel,
     intervalName,
-    label:`${selectedKeySig.jp} — ${quality} / ${voicingLabel}${intervalName?' / '+intervalName:''}`,
+    label:`${activeKeySig().jp} — ${quality} / ${voicingLabel}${intervalName?' / '+intervalName:''}`,
     jp:`正解: ${letters.join('・')}`
   };
 }
@@ -2144,7 +2235,7 @@ function updatePracticeSummary(){
   }
   const logSummary=document.getElementById('practice-log-summary');
   const oldStatus=document.getElementById('challenge-status');
-  if(logSummary&&oldStatus) logSummary.textContent=oldStatus.textContent;
+  if(logSummary&&oldStatus) logSummary.textContent=oldStatus.textContent+' / 難易度 Lv.'+difficultyLevel;
 }
 
 function updateChordPanel(){
@@ -2249,7 +2340,8 @@ function submitChordAnswer(){
       const ok=chordSequenceResults.filter(r=>r&&r.correct).length;
 
       if(fb){
-        fb.textContent=`${ok===seqLen?'✓':'△'} 重音連続 完了 ${ok}/${seqLen} — 前/次の束で振り返り`;
+        const leveled=tryAutoLevelUp(ok,seqLen);
+        fb.textContent=`${ok===seqLen?'✓':'△'} 重音連続 CLEAR ${ok}/${seqLen}${leveled?' — 難易度 Lv.'+difficultyLevel+'へ':''} — 前/次の束で振り返り`;
         fb.className=ok===seqLen?'feedback-bar ok':'feedback-bar ng';
       }
 
@@ -2262,7 +2354,7 @@ function submitChordAnswer(){
         correct:ok===seqLen,
         answered:chordSequenceResults.map(r=>r?r.selected.join('・'):'?').join(' / '),
         answeredLabel:chordSequenceResults.map((r,idx)=>formatChordSelection(chordSequenceSelections[idx])).join(' / '),
-        keySig:selectedKeySig,
+        keySig:activeKeySig(),
         chordSequence:currentChordSequence,
         notes:currentChordSequence.flatMap(c=>c.notes)
       });
@@ -2337,7 +2429,7 @@ function submitChordAnswer(){
     correct,
     answered:selected.join('・')||'—',
     answeredLabel:selected.map(k=>pitchLabel(parsePitchKey(k))).join('・')||'—',
-    keySig:selectedKeySig,
+    keySig:activeKeySig(),
     notes:currentChord.notes,
     letters:currentChord.letters,
     wrongNotes:wrongPitchNotes,
@@ -2519,7 +2611,8 @@ function applyPlayableInversion(notes,maxSpan=12){
 }
 
 function generateChordSequenceQuestion(){
-  const len=Math.random()<0.65?3:4;
+  const len=resolveSequenceLength();
+  currentSequenceTargetLength=len;
   const seq=[];
   for(let i=0;i<len;i++){
     const chord=generateChordQuestionSafe();
@@ -2598,7 +2691,7 @@ function updateSequenceFeedback(){
   const done=sequenceIndex;
   const total=currentSequence.length;
   const modeText=fiveFingerMode?'5本範囲':'広め';
-  fb.textContent=`連続読み ${done+1}/${total} — ${modeText} / ${sequenceLength==='random'?'2-5 random':currentSequenceTargetLength+' notes'} / 左から順に読む`;
+  fb.textContent=`単音連続 ${done+1}/${total} — 難易度 Lv.${difficultyLevel} / ${sequenceLength==='random'?'ランダム':currentSequenceTargetLength+'問'}`;
   fb.className='feedback-bar wait';
 }
 
@@ -2606,8 +2699,9 @@ function recordWeakPoint(expected,answeredName,correct,mode){
   const key='musicTrainerWeakPoints';
   let data={};
   try{data=JSON.parse(localStorage.getItem(key)||'{}');}catch(e){data={};}
-  const label=`${mode}|${selectedKeySig.label}|${currentClef}|${expected.n}`;
-  if(!data[label]) data[label]={mode,key:selectedKeySig.label,clef:currentClef,note:expected.n,total:0,wrong:0};
+  const aks=activeKeySig();
+  const label=`${mode}|${aks.label}|${currentClef}|${expected.n}`;
+  if(!data[label]) data[label]={mode,key:aks.label,clef:currentClef,note:expected.n,total:0,wrong:0};
   data[label].total++;
   if(!correct) data[label].wrong++;
   localStorage.setItem(key,JSON.stringify(data));
@@ -2643,12 +2737,10 @@ function nextQuestion(){
   if(clefMode==='treble') currentClef='treble';
   else if(clefMode==='bass') currentClef='bass';
   else currentClef=Math.random()<.5?'treble':'bass';
+  questionKeySig=chooseQuestionKeySig();
   const pool=currentClef==='treble'?TREBLE_POOL:BASS_POOL;
 
-  if(questionMode==='chord'){
-    currentChord=generateChordQuestionSafe();
-    currentNote=currentChord.notes[0];
-  }else if(questionMode==='chordseq'){
+  if(questionMode==='chordseq'){
     currentChordSequence=generateChordSequenceQuestion();
     currentChord=currentChordSequence[0];
     currentNote=currentChord.notes[0];
@@ -2673,7 +2765,7 @@ function nextQuestion(){
     fb.textContent=`重音連続 1/${currentChordSequence.length} — Checkで束ごとに判定し、緑/赤を付けて次へ`;
     fb.className='feedback-bar wait';
   }else if(questionMode==='sequence'){
-    fb.textContent=`連続読み 1/${currentSequence.length} — ${fiveFingerMode?'5本範囲':'広め'} / ${sequenceLength==='random'?'2-5 random':currentSequenceTargetLength+' notes'} / 左から順に読む`;
+    fb.textContent=`単音連続 1/${currentSequence.length} — 難易度 Lv.${difficultyLevel} / ${sequenceLength==='random'?'ランダム':currentSequenceTargetLength+'問'}`;
     fb.className='feedback-bar wait';
   }else{
     fb.textContent='音名ボタンまたは鍵盤をタップ';
@@ -2682,7 +2774,7 @@ function nextQuestion(){
   renderStaff();
   renderKeyboard(null);
   const clefJP=currentClef==='treble'?'ト音記号':'ヘ音記号';
-  document.getElementById('clef-label').textContent=(currentClef==='treble'?'TREBLE CLEF':'BASS CLEF')+' — '+clefJP+(questionMode==='chord'?' / CHORD':(questionMode==='chordseq'?' / CHORD SEQ':(questionMode==='sequence'?' / SEQUENCE':'')));
+  document.getElementById('clef-label').textContent=(currentClef==='treble'?'TREBLE CLEF':'BASS CLEF')+' — '+clefJP+(questionMode==='chordseq'?' / CHORD SEQ':' / MELODY SEQ')+' / '+activeKeySig().label;
   updateKeyTip();
   updateChordPanel();
 }
@@ -2717,9 +2809,10 @@ function selectNote(n,displayLabel=n){
       answered=true;
       const ok=sequenceResults.filter(r=>r&&r.correct).length;
       const fb=document.getElementById('feedback');
-      fb.textContent=`${ok===currentSequence.length?'✓':'△'} 連続読み完了 ${ok}/${currentSequence.length} — ${currentSequence.map(pitchLabel).join('・')}`;
+      const leveled=tryAutoLevelUp(ok,currentSequence.length);
+      fb.textContent=`${ok===currentSequence.length?'✓':'△'} 単音連続 CLEAR ${ok}/${currentSequence.length}${leveled?' — 難易度 Lv.'+difficultyLevel+'へ':''} — ${currentSequence.map(pitchLabel).join('・')}`;
       fb.className=ok===currentSequence.length?'feedback-bar ok':'feedback-bar ng';
-      history.unshift({sequence:true,note:'Seq',oct:'',jp:currentSequence.map(pitchLabel).join('・'),clef:currentClef,correct:ok===currentSequence.length,answered:sequenceResults.map(r=>r?r.answered:'?').join('・'),answeredLabel:sequenceResults.map(r=>r?r.answeredLabel:'?').join('・'),keySig:selectedKeySig,notes:currentSequence});
+      history.unshift({sequence:true,note:'Seq',oct:'',jp:currentSequence.map(pitchLabel).join('・'),clef:currentClef,correct:ok===currentSequence.length,answered:sequenceResults.map(r=>r?r.answered:'?').join('・'),answeredLabel:sequenceResults.map(r=>r?r.answeredLabel:'?').join('・'),keySig:activeKeySig(),notes:currentSequence});
       if(history.length>10) history.pop();
       renderHistory();
       const nextBtn=document.getElementById('next-btn');
@@ -2762,7 +2855,7 @@ function selectNote(n,displayLabel=n){
   renderKeyboard(currentNote,wrongKeyboardNotes);
   updateStats();
   // push history
-  history.unshift({note:currentNote.n,oct:currentNote.o,jp:jp,clef:currentClef,correct,answered:n,answeredLabel:displayLabel,keySig:selectedKeySig,wrongNotes:wrongKeyboardNotes});
+  history.unshift({note:currentNote.n,oct:currentNote.o,jp:jp,clef:currentClef,correct,answered:n,answeredLabel:displayLabel,keySig:activeKeySig(),wrongNotes:wrongKeyboardNotes});
   if(history.length>10) history.pop();
   renderHistory();
   const nextBtn=document.getElementById('next-btn');
@@ -2798,9 +2891,10 @@ function reviewHistory(i){
   renderHistory();
 
   // Save globals, override for render
-  const savedClef=currentClef, savedNote=currentNote, savedKeySig=selectedKeySig;
+  const savedClef=currentClef, savedNote=currentNote, savedKeySig=selectedKeySig, savedQuestionKeySig=questionKeySig;
   currentClef=h.clef;
   selectedKeySig=h.keySig;
+  questionKeySig=h.keySig;
   const savedChord=currentChord, savedMode=questionMode;
   if(h.chord){
     questionMode='chord';
@@ -2844,6 +2938,7 @@ function reviewHistory(i){
   selectedKeySig=savedKeySig;
   currentChord=savedChord;
   questionMode=savedMode;
+  questionKeySig=savedQuestionKeySig;
 
   // Show "次へ" so user can manually advance when done reviewing
   if(answered){
@@ -2932,7 +3027,7 @@ function renderStaff(){
 
   const ls=12, topLineY=28;
   const leftX=56, rightX=540;
-  const accidentalCount=Math.max(selectedKeySig.sharps.length,selectedKeySig.flats.length);
+  const accidentalCount=Math.max(activeKeySig().sharps.length,activeKeySig().flats.length);
   const noteX=316 + Math.max(0, accidentalCount-4)*18;
   const sc='#1A1714',nc='#2D5FA3',lc='#5A5550';
   const bottomLine=topLineY+4*ls;
@@ -2960,7 +3055,7 @@ function renderStaff(){
     txt('𝄢',{x:10,y:bottomLine-6,'font-size':56,fill:sc,'font-family':'serif'},svg);
   }
 
-  const ks=selectedKeySig;
+  const ks=activeKeySig();
   const KEYSIG_POSITIONS={
     treble:{
       sharps:[
@@ -3015,9 +3110,18 @@ function renderStaff(){
   if(questionMode==='chordseq'&&currentChordSequence.length){
     const clusterBaseX=170;
     const clusterGap=92;
+    const chordPageIndex=answered?chordSequenceReviewIndex:chordSequenceIndex;
+    const chordPageStart=visiblePageStart(Math.min(chordPageIndex,currentChordSequence.length-1));
+    const visibleChordSeq=currentChordSequence.slice(chordPageStart,chordPageStart+5);
+    if(currentChordSequence.length>5){
+      const pageNo=Math.floor(chordPageStart/5)+1;
+      const pageMax=Math.ceil(currentChordSequence.length/5);
+      txt(`PAGE ${pageNo}/${pageMax}  ${Math.min(chordPageIndex+1,currentChordSequence.length)}/${currentChordSequence.length}`,{x:400,y:topLineY-10,'font-size':11,fill:'#5A5550','font-family':'DM Mono, monospace','font-weight':'700'},svg);
+    }
     const placedSeq=[];
-    currentChordSequence.forEach((chord,ci)=>{
-      const baseX=clusterBaseX+ci*clusterGap;
+    visibleChordSeq.forEach((chord,localCi)=>{
+      const ci=chordPageStart+localCi;
+      const baseX=clusterBaseX+localCi*clusterGap;
       const chordPlaced=[];
       const sorted=chord.notes.slice().sort((a,b)=>getNoteY(a,currentClef,topLineY,ls)-getNoteY(b,currentClef,topLineY,ls));
 
@@ -3098,7 +3202,8 @@ function renderStaff(){
     return;
   }
 
-  const notesToDraw=questionMode==='sequence'&&currentSequence.length?currentSequence:((questionMode==='chord'&&currentChord)?currentChord.notes:[currentNote]);
+  const sequencePageStart=(questionMode==='sequence'&&currentSequence.length)?visiblePageStart(Math.min(sequenceIndex,currentSequence.length-1)):0;
+  const notesToDraw=questionMode==='sequence'&&currentSequence.length?currentSequence.slice(sequencePageStart,sequencePageStart+5):((questionMode==='chord'&&currentChord)?currentChord.notes:[currentNote]);
 
   function drawLedgerLinesFor(noteY,xCenter){
     const lw=34;
@@ -3138,6 +3243,7 @@ function renderStaff(){
 
   const placed=[];
   notesToDraw.forEach((note,idx)=>{
+    const actualIdx=questionMode==='sequence'?sequencePageStart+idx:idx;
     const noteY=getNoteY(note,currentClef,topLineY,ls);
     const prevY=idx>0?getNoteY(notesToDraw[idx-1],currentClef,topLineY,ls):null;
     const needsSideOffset=questionMode==='chord'&&prevY!==null&&Math.abs(prevY-noteY)<=6;
@@ -3147,14 +3253,14 @@ function renderStaff(){
     const seqX=questionMode==='sequence' ? (seqStart + idx*seqGap) : noteX;
     const xOffset=needsSideOffset?12:0;
     const x=seqX+xOffset;
-    placed.push({x,y:noteY,note,idx});
+    placed.push({x,y:noteY,note,idx:actualIdx});
     drawLedgerLinesFor(noteY,x);
     let color=nc, strokeColor='#204978';
     if(questionMode==='sequence'){
-      if(idx<sequenceIndex){
-        color=sequenceResults[idx]&&sequenceResults[idx].correct?'#23A45A':'#C43B4B';
+      if(actualIdx<sequenceIndex){
+        color=sequenceResults[actualIdx]&&sequenceResults[actualIdx].correct?'#23A45A':'#C43B4B';
         strokeColor=color;
-      }else if(idx===sequenceIndex){
+      }else if(actualIdx===sequenceIndex){
         color='#2D5FA3';
         strokeColor='#102F62';
         el('circle',{cx:x,cy:noteY,r:17,fill:'none',stroke:'rgba(45,95,163,.25)','stroke-width':2},svg);
@@ -3165,6 +3271,12 @@ function renderStaff(){
     }
     drawNoteHead(x,noteY,color,strokeColor);
   });
+
+  if(questionMode==='sequence'&&currentSequence.length>5){
+    const pageNo=Math.floor(sequencePageStart/5)+1;
+    const pageMax=Math.ceil(currentSequence.length/5);
+    txt(`PAGE ${pageNo}/${pageMax}  ${Math.min(sequenceIndex+1,currentSequence.length)}/${currentSequence.length}`,{x:420,y:topLineY-10,'font-size':11,fill:'#5A5550','font-family':'DM Mono, monospace','font-weight':'700'},svg);
+  }
 
   if(notesToDraw.length>0){
     if(questionMode==='sequence'){
@@ -3218,7 +3330,7 @@ function renderKeyboard(answerNote,wrongNote=[]){
   const keepScroll=wrapEl?wrapEl.scrollLeft:0;
   wrap.innerHTML='';
 
-  const ks=selectedKeySig;
+  const ks=activeKeySig();
   const answerNotes=Array.isArray(answerNote)?answerNote:(answerNote?[answerNote]:[]);
   const wrongNotes=Array.isArray(wrongNote)?wrongNote:(wrongNote?[wrongNote]:[]);
   const targetNotes=questionMode==='sequence'&&currentSequence.length?[sequenceCurrentNote()]:(((questionMode==='chord'||questionMode==='chordseq')&&currentChord)?currentChord.notes:(currentNote?[currentNote]:[]));
@@ -3399,7 +3511,7 @@ function updateChallengeStatus(){
     timerText=`${remain}s`;
   }
   const acc=stats.total?Math.round(stats.correct/stats.total*100):0;
-  el.textContent=`${challengeLogging?'LOG ON':'LOG OFF'} / ${timerText} / SEQ ${sequenceLength==='random'?'2-5':sequenceLength} / ${stats.correct}/${stats.total} ${stats.total?acc+'%':'—'}`;
+  el.textContent=`${challengeLogging?'LOG ON':'LOG OFF'} / ${timerText} / ${sequenceLength==='random'?'ランダム':sequenceLength+'問'} / 難易度 Lv.${difficultyLevel} / ${stats.correct}/${stats.total} ${stats.total?acc+'%':'—'}`;
   updatePracticeSummary();
 }
 function toggleDailyLogging(){
@@ -3426,7 +3538,7 @@ function finishChallengeTimer(){
   const start=challengeStartStats||{correct:0,total:0,startedAt:new Date().toISOString()};
   const deltaTotal=Math.max(0,stats.total-start.total);
   const deltaCorrect=Math.max(0,stats.correct-start.correct);
-  const record={date:todayKey(),endedAt:new Date().toISOString(),durationSec:challengeDurationSec,mode:questionMode,clefMode,key:selectedKeySig.label,seqLen:questionMode==='sequence'?currentSequenceTargetLength:null,correct:deltaCorrect,total:deltaTotal,accuracy:deltaTotal?Math.round(deltaCorrect/deltaTotal*100):0};
+  const record={date:todayKey(),endedAt:new Date().toISOString(),durationSec:challengeDurationSec,mode:questionMode,clefMode,key:activeKeySig().label,seqLen:questionMode==='sequence'?currentSequenceTargetLength:null,correct:deltaCorrect,total:deltaTotal,accuracy:deltaTotal?Math.round(deltaCorrect/deltaTotal*100):0};
   if(challengeLogging) saveDailyRecord(record);
   challengeEndAt=0;challengeStartStats=null;
   updateChallengeStatus();renderDailyLog();
@@ -3448,7 +3560,7 @@ function saveDailyRecord(record){
   setDailyLogs(logs);
 }
 function saveDailyLogManual(){
-  const record={date:todayKey(),endedAt:new Date().toISOString(),durationSec:0,mode:questionMode,clefMode,key:selectedKeySig.label,seqLen:questionMode==='sequence'?currentSequenceTargetLength:null,correct:stats.correct,total:stats.total,accuracy:stats.total?Math.round(stats.correct/stats.total*100):0};
+  const record={date:todayKey(),endedAt:new Date().toISOString(),durationSec:0,mode:questionMode,clefMode,key:activeKeySig().label,seqLen:questionMode==='sequence'?currentSequenceTargetLength:null,correct:stats.correct,total:stats.total,accuracy:stats.total?Math.round(stats.correct/stats.total*100):0};
   saveDailyRecord(record);renderDailyLog(true);updateChallengeStatus();
 }
 function toggleLogView(){const box=document.getElementById('challenge-log');if(!box)return;box.classList.toggle('show');renderDailyLog();}
@@ -3696,6 +3808,7 @@ function initApp(){
   buildKeySigUI();
   initFiveFingerMode();
   initSequenceLength();
+  initDifficultyLevel();
   initChallengeLog();
   initKeyboardScrollRail();
   initMobilePracticeMode();
