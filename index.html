@@ -628,7 +628,19 @@ input[type="range"]{accent-color:#7DB7FF;}
 .difficulty-head{display:flex;align-items:center;justify-content:space-between;gap:10px;font-family:var(--mono);font-size:11px;color:rgba(246,241,231,.64);letter-spacing:.04em;}
 .difficulty-head strong{color:#FFF7EA;font-size:13px;}
 .difficulty-range{width:100%;margin:9px 0 5px;accent-color:#7DB7FF;}
+.difficulty-meter{height:10px;border-radius:999px;margin:9px 0 7px;background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.10);overflow:hidden;box-shadow:inset 0 1px 0 rgba(255,255,255,.08);}
+.difficulty-meter-fill{height:100%;width:10%;border-radius:999px;background:linear-gradient(90deg,#2BCB89,#7DB7FF,#F7B955,#FF6B76);box-shadow:0 0 18px rgba(125,183,255,.25);transition:width .25s ease;}
+.difficulty-scale{display:flex;justify-content:space-between;font-size:9px;font-family:var(--mono);color:rgba(246,241,231,.42);letter-spacing:.05em;margin-bottom:6px;}
 .difficulty-desc{font-size:11px;line-height:1.45;color:rgba(246,241,231,.62);}
+.time-attack-box{width:100%;margin-top:8px;padding:10px 11px;border-radius:16px;background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.10);}
+.time-attack-head{display:flex;align-items:center;justify-content:space-between;gap:10px;font-family:var(--mono);font-size:11px;color:rgba(246,241,231,.62);}
+.time-attack-time{font-size:20px;color:#FFF7EA;font-weight:700;letter-spacing:.03em;}
+.time-attack-actions{display:flex;flex-wrap:wrap;gap:7px;margin-top:8px;}
+.challenge-btn.time-active{background:linear-gradient(135deg,#FF5969,#B83030);color:#fff;border-color:rgba(255,255,255,.24);box-shadow:0 12px 30px rgba(255,89,105,.18);}
+.tip-assist-box{display:none;margin:8px 0 10px;padding:10px 12px;border-radius:16px;background:linear-gradient(135deg,rgba(247,185,85,.14),rgba(125,183,255,.08));border:1px solid rgba(247,185,85,.22);color:rgba(246,241,231,.82);font-size:12px;line-height:1.5;}
+.tip-assist-box.show{display:block;}
+.tip-assist-title{font-family:var(--mono);font-size:10px;letter-spacing:.08em;color:#FFE2A6;margin-bottom:4px;}
+.keyboard-tip-zone{position:absolute;top:0;bottom:0;border:2px solid rgba(247,185,85,.72);background:rgba(247,185,85,.14);border-radius:8px;pointer-events:none;z-index:9;box-shadow:0 0 0 4px rgba(247,185,85,.08);}
 .page-indicator{font-family:var(--mono);font-size:11px;fill:#5A5550;font-weight:700;}
 
 /* Mobile sight-reading layout:
@@ -948,14 +960,21 @@ input[type="range"]{accent-color:#7DB7FF;}
         <button class="challenge-btn" id="top-seq-len-10" onclick="setSequenceLength(10)">10問</button>
         <div class="difficulty-box">
           <div class="difficulty-head"><span>難易度</span><strong id="difficulty-label">Lv.1 / 10</strong></div>
+          <div class="difficulty-meter" aria-hidden="true"><div class="difficulty-meter-fill" id="difficulty-meter-fill"></div></div>
+          <div class="difficulty-scale"><span>Easy</span><span>Hard</span></div>
           <input id="difficulty-range" class="difficulty-range" type="range" min="1" max="10" value="1" oninput="setDifficultyLevel(this.value)">
           <div class="difficulty-desc" id="difficulty-desc">選択調号固定 / 5問 / 狭い音域</div>
         </div>
-        <button class="challenge-btn" onclick="startChallengeTimer(60)">60s</button>
-        <button class="challenge-btn" onclick="startChallengeTimer(180)">3m</button>
-        <button class="challenge-btn" onclick="stopChallengeTimer()">STOP</button>
-        <button class="challenge-btn" onclick="toggleLogView()">LOG</button>
-        <button class="challenge-btn" onclick="saveDailyLogManual()">SAVE</button>
+        <div class="time-attack-box">
+          <div class="time-attack-head"><span>TIME ATTACK</span><strong class="time-attack-time" id="time-attack-display">READY</strong></div>
+          <div class="time-attack-actions">
+            <button class="challenge-btn active" id="time-duration-60" onclick="setTimeAttackDuration(60)">60s</button>
+            <button class="challenge-btn" id="time-duration-180" onclick="setTimeAttackDuration(180)">3m</button>
+            <button class="challenge-btn primary" id="time-attack-start-btn" onclick="toggleTimeAttack()">START</button>
+            <button class="challenge-btn" onclick="toggleLogView()">LOG</button>
+            <button class="challenge-btn" onclick="saveDailyLogManual()">SAVE</button>
+          </div>
+        </div>
       </div>
       <div class="practice-subline" id="practice-log-summary">LOG OFF / Timer ready</div>
     </div>
@@ -988,6 +1007,10 @@ input[type="range"]{accent-color:#7DB7FF;}
   </div>
 
   <div class="feedback-bar wait" id="feedback">音名ボタンまたは鍵盤をタップ</div>
+  <div class="tip-assist-box" id="tip-assist-box">
+    <div class="tip-assist-title">TIP ASSIST</div>
+    <div id="tip-assist-text">迷ったら、五線譜の位置と調号を見てください。</div>
+  </div>
 
   <!-- note name buttons -->
   <div class="note-buttons" id="note-buttons">
@@ -1140,6 +1163,10 @@ let fiveFingerMode=true;
 let sequenceLength=5;
 let difficultyLevel=1;
 let currentSequenceTargetLength=5;
+let timeAttackDurationSec=60;
+let timeAttackActive=false;
+let tipAssistTimer=null;
+let tipAssistShown=false;
 let chordSize=2;
 let currentChordSize=2;
 let currentChord=null;
@@ -1208,7 +1235,13 @@ function setDifficultyLevel(v,skipNext=false){
   const range=document.getElementById('difficulty-range');
   const label=document.getElementById('difficulty-label');
   const desc=document.getElementById('difficulty-desc');
-  if(range) range.value=String(difficultyLevel);
+  const pct=((difficultyLevel-1)/9)*100;
+  if(range){
+    range.value=String(difficultyLevel);
+    range.style.background=`linear-gradient(90deg,#2BCB89 0%,#7DB7FF ${Math.min(60,pct)}%,#F7B955 ${Math.min(85,Math.max(60,pct))}%,#FF6B76 ${pct}%,rgba(255,255,255,.12) ${pct}%)`;
+  }
+  const fill=document.getElementById('difficulty-meter-fill');
+  if(fill) fill.style.width=`${10+pct*0.9}%`;
   if(label) label.textContent=`Lv.${difficultyLevel} / 10`;
   if(desc) desc.textContent=difficultyText();
   updatePracticeSummary();
@@ -1451,6 +1484,8 @@ function toggleKeyboardMode(){
 function toggleKeyTip(){
   keyTipMode=!keyTipMode;
   updateKeyTip();
+  if(keyTipMode) scheduleTipAssist(2500);
+  else hideTipAssist();
 }
 
 function noteLabel(note,mode='natural'){
@@ -2273,6 +2308,7 @@ function toggleChordSelection(n){
 }
 
 function submitChordAnswer(){
+  hideTipAssist();
   const now=Date.now();
   if(now-lastChordSubmitAt<220) return;
   lastChordSubmitAt=now;
@@ -2332,6 +2368,7 @@ function submitChordAnswer(){
         updateChordPanel();
         updateChordCheckDock();
         updateKeyboardScrollRail();
+        scheduleTipAssist();
         return;
       }
 
@@ -2777,9 +2814,11 @@ function nextQuestion(){
   document.getElementById('clef-label').textContent=(currentClef==='treble'?'TREBLE CLEF':'BASS CLEF')+' — '+clefJP+(questionMode==='chordseq'?' / CHORD SEQ':' / MELODY SEQ')+' / '+activeKeySig().label;
   updateKeyTip();
   updateChordPanel();
+  scheduleTipAssist();
 }
 
 function selectNote(n,displayLabel=n){
+  hideTipAssist();
   if(questionMode==='chord'||questionMode==='chordseq'){
     return;
   }
@@ -2824,6 +2863,7 @@ function selectNote(n,displayLabel=n){
       }
     }else{
       updateSequenceFeedback();
+      scheduleTipAssist();
     }
     return;
   }
@@ -3498,20 +3538,129 @@ function todayKey(){
 }
 function getDailyLogs(){try{return JSON.parse(localStorage.getItem('musicTrainerDailyLogs')||'[]');}catch(e){return [];}}
 function setDailyLogs(logs){localStorage.setItem('musicTrainerDailyLogs',JSON.stringify(logs.slice(0,365)));}
+
+function setTimeAttackDuration(sec){
+  timeAttackDurationSec=sec;
+  localStorage.setItem('musicTrainerTimeAttackDuration',String(sec));
+  [60,180].forEach(v=>{
+    const btn=document.getElementById('time-duration-'+v);
+    if(btn) btn.classList.toggle('active',v===sec);
+  });
+  updateChallengeStatus();
+}
+
+function initTimeAttackDuration(){
+  const saved=parseInt(localStorage.getItem('musicTrainerTimeAttackDuration')||'60',10);
+  setTimeAttackDuration([60,180].includes(saved)?saved:60);
+}
+
+function toggleTimeAttack(){
+  if(timeAttackActive){
+    stopChallengeTimer();
+  }else{
+    startChallengeTimer(timeAttackDurationSec);
+  }
+}
+
+function formatRemain(sec){
+  sec=Math.max(0,Math.ceil(sec));
+  const m=Math.floor(sec/60);
+  const s=sec%60;
+  return m>0?`${m}:${String(s).padStart(2,'0')}`:`${s}s`;
+}
+
+function getCurrentTargetForTip(){
+  if(questionMode==='sequence') return sequenceCurrentNote();
+  if(questionMode==='chordseq'&&currentChord) return currentChord.notes&&currentChord.notes[0];
+  if(questionMode==='chord'&&currentChord) return currentChord.notes&&currentChord.notes[0];
+  return currentNote;
+}
+
+function keyboardZoneLabel(note){
+  if(!note) return '中央付近';
+  const midi=noteToMidi(note);
+  if(midi<52) return '左側・低音エリア';
+  if(midi>72) return '右側・高音エリア';
+  return '中央エリア';
+}
+
+function showKeyboardTipZone(note){
+  const html=document.getElementById('keyboard-html');
+  if(!html) return;
+  html.querySelectorAll('.keyboard-tip-zone').forEach(x=>x.remove());
+  if(!note) return;
+  const midi=noteToMidi(note);
+  const keys=html.querySelectorAll('[data-midi]');
+  let target=null;
+  keys.forEach(k=>{ if(parseInt(k.getAttribute('data-midi'),10)===midi) target=k; });
+  if(!target) return;
+  const zone=document.createElement('div');
+  zone.className='keyboard-tip-zone';
+  const left=Math.max(0,target.offsetLeft-34);
+  zone.style.left=left+'px';
+  zone.style.width=Math.max(68,target.offsetWidth+68)+'px';
+  html.appendChild(zone);
+}
+
+function hideTipAssist(){
+  clearTimeout(tipAssistTimer);
+  tipAssistTimer=null;
+  tipAssistShown=false;
+  const box=document.getElementById('tip-assist-box');
+  if(box) box.classList.remove('show');
+  const html=document.getElementById('keyboard-html');
+  if(html) html.querySelectorAll('.keyboard-tip-zone').forEach(x=>x.remove());
+}
+
+function showTipAssist(){
+  if(!keyTipMode||answered) return;
+  const box=document.getElementById('tip-assist-box');
+  const text=document.getElementById('tip-assist-text');
+  if(!box||!text) return;
+  const target=getCurrentTargetForTip();
+  const aks=activeKeySig();
+  const keyPart=aks&&aks.label?`調号は ${aks.label}。`:'';
+  if(questionMode==='chordseq'){
+    text.textContent=`${keyPart} まず一番低い音から探してください。鍵盤は ${keyboardZoneLabel(target)} を見ます。束の音数は ${currentChordSize}音です。`;
+  }else if(questionMode==='sequence'){
+    text.textContent=`${keyPart} 現在の音は ${keyboardZoneLabel(target)} にあります。五線譜の線・間を数えて、同じエリアの鍵盤を押してください。`;
+  }else{
+    text.textContent=`${keyPart} 鍵盤は ${keyboardZoneLabel(target)} を確認してください。`;
+  }
+  box.classList.add('show');
+  showKeyboardTipZone(target);
+  tipAssistShown=true;
+}
+
+function scheduleTipAssist(delay=4500){
+  hideTipAssist();
+  if(!keyTipMode||answered) return;
+  tipAssistTimer=setTimeout(showTipAssist,delay);
+}
+
 function updateChallengeStatus(){
   const el=document.getElementById('challenge-status');
   const btn=document.getElementById('log-toggle-btn');
   if(btn){btn.textContent=challengeLogging?'LOG ON':'LOG OFF';btn.classList.toggle('active',challengeLogging);}
   const topLog=document.getElementById('top-log-toggle-btn');
   if(topLog){topLog.textContent=challengeLogging?'LOG ON':'LOG OFF';topLog.classList.toggle('active',challengeLogging);}
-  if(!el) return;
   let timerText='Timer ready';
+  let displayText='READY';
   if(challengeEndAt){
     const remain=Math.max(0,Math.ceil((challengeEndAt-Date.now())/1000));
-    timerText=`${remain}s`;
+    timerText=formatRemain(remain);
+    displayText=timerText;
   }
+  const display=document.getElementById('time-attack-display');
+  if(display) display.textContent=timeAttackActive?displayText:'READY';
+  const startBtn=document.getElementById('time-attack-start-btn');
+  if(startBtn){
+    startBtn.textContent=timeAttackActive?'STOP':'START';
+    startBtn.classList.toggle('time-active',timeAttackActive);
+  }
+  if(!el) return;
   const acc=stats.total?Math.round(stats.correct/stats.total*100):0;
-  el.textContent=`${challengeLogging?'LOG ON':'LOG OFF'} / ${timerText} / ${sequenceLength==='random'?'ランダム':sequenceLength+'問'} / 難易度 Lv.${difficultyLevel} / ${stats.correct}/${stats.total} ${stats.total?acc+'%':'—'}`;
+  el.textContent=`${challengeLogging?'LOG ON':'LOG OFF'} / ${timeAttackActive?'TIME ATTACK '+timerText:'Timer ready'} / ${sequenceLength==='random'?'ランダム':sequenceLength+'問'} / 難易度 Lv.${difficultyLevel} / ${stats.correct}/${stats.total} ${stats.total?acc+'%':'—'}`;
   updatePracticeSummary();
 }
 function toggleDailyLogging(){
@@ -3520,6 +3669,7 @@ function toggleDailyLogging(){
   updateChallengeStatus();
 }
 function startChallengeTimer(sec){
+  timeAttackActive=true;
   challengeDurationSec=sec;
   challengeEndAt=Date.now()+sec*1000;
   challengeStartStats={correct:stats.correct,total:stats.total,streak:stats.streak,startedAt:new Date().toISOString()};
@@ -3529,7 +3679,7 @@ function startChallengeTimer(sec){
 }
 function stopChallengeTimer(){
   clearInterval(challengeTimer);
-  challengeTimer=null;challengeEndAt=0;challengeStartStats=null;
+  challengeTimer=null;challengeEndAt=0;challengeStartStats=null;timeAttackActive=false;
   updateChallengeStatus();
 }
 function finishChallengeTimer(){
@@ -3540,7 +3690,7 @@ function finishChallengeTimer(){
   const deltaCorrect=Math.max(0,stats.correct-start.correct);
   const record={date:todayKey(),endedAt:new Date().toISOString(),durationSec:challengeDurationSec,mode:questionMode,clefMode,key:activeKeySig().label,seqLen:questionMode==='sequence'?currentSequenceTargetLength:null,correct:deltaCorrect,total:deltaTotal,accuracy:deltaTotal?Math.round(deltaCorrect/deltaTotal*100):0};
   if(challengeLogging) saveDailyRecord(record);
-  challengeEndAt=0;challengeStartStats=null;
+  challengeEndAt=0;challengeStartStats=null;timeAttackActive=false;
   updateChallengeStatus();renderDailyLog();
 }
 function saveDailyRecord(record){
@@ -3809,6 +3959,7 @@ function initApp(){
   initFiveFingerMode();
   initSequenceLength();
   initDifficultyLevel();
+  initTimeAttackDuration();
   initChallengeLog();
   initKeyboardScrollRail();
   initMobilePracticeMode();
