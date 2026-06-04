@@ -1995,38 +1995,48 @@ function submitChordAnswer(){
   fb.classList.remove('compact-hide');
 
   if(questionMode==='chordseq'){
-    // In chord sequence mode, Check is "next bundle" until the last bundle.
-    // The actual grading is done once after all bundles have been played/selected.
+    // Check each bundle as you proceed. Completed bundles stay green/red on the staff.
     storeCurrentChordSeqSelection();
+    const bundleResult=gradeChordSeqSelection(currentChord,chordSequenceSelections[chordSequenceIndex]||[]);
+    chordSequenceResults[chordSequenceIndex]=bundleResult;
+
+    stats.total++;
+    if(bundleResult.correct){ stats.correct++; stats.streak++; }
+    else { stats.streak=0; }
+    currentChord.notes.forEach(n=>recordWeakPoint(n,(bundleResult.selected||[]).join('|'),bundleResult.correct,questionMode));
+    updateStats();
+
+    renderStaff();
+    renderKeyboard(currentChord.notes,bundleResult.wrongPitchNotes||[]);
 
     if(chordSequenceIndex < currentChordSequence.length-1){
+      const wasCorrect=bundleResult.correct;
+      fb.textContent=`${wasCorrect?'✓':'✗'} 束 ${chordSequenceIndex+1}/${currentChordSequence.length} ${wasCorrect?'正解':'不正解'} → 次の束へ`;
+      fb.className=wasCorrect?'feedback-bar ok':'feedback-bar ng';
+
       chordSequenceIndex++;
       currentChord=currentChordSequence[chordSequenceIndex];
       currentNote=currentChord.notes[0];
       chordPitchSelection.clear();
       chordPitchOrder=[];
       keyboardAutoPositionPending=true;
-      renderStaff();
-      renderKeyboard(null);
-      updateChordPanel();
-      updateChordSequenceFeedback();
+
+      // Re-render after advancing so the previous bundle remains green/red and current bundle is blue.
+      setTimeout(()=>{
+        if(questionMode==='chordseq'&&!answered){
+          renderStaff();
+          renderKeyboard(null);
+          updateChordPanel();
+          updateChordSequenceFeedback();
+        }
+      },180);
       return;
     }
 
     answered=true;
-    chordSequenceResults=currentChordSequence.map((ch,idx)=>gradeChordSeqSelection(ch,chordSequenceSelections[idx]||[]));
-    const ok=chordSequenceResults.filter(r=>r.correct).length;
+    const ok=chordSequenceResults.filter(r=>r&&r.correct).length;
 
-    // Count one attempt per bundle, then show summary.
-    stats.total+=currentChordSequence.length;
-    stats.correct+=ok;
-    stats.streak=(ok===currentChordSequence.length)?stats.streak+currentChordSequence.length:0;
-    currentChordSequence.forEach((ch,idx)=>{
-      const r=chordSequenceResults[idx];
-      ch.notes.forEach(n=>recordWeakPoint(n,(r.selected||[]).join('|'),r.correct,questionMode));
-    });
-
-    fb.textContent=`${ok===currentChordSequence.length?'✓':'△'} 重音連続 答え合わせ ${ok}/${currentChordSequence.length} — 束ごとに振り返り可能`;
+    fb.textContent=`${ok===currentChordSequence.length?'✓':'△'} 重音連続 完了 ${ok}/${currentChordSequence.length} — 前/次の束で振り返り`;
     fb.className=ok===currentChordSequence.length?'feedback-bar ok':'feedback-bar ng';
 
     history.unshift({
@@ -2045,15 +2055,14 @@ function submitChordAnswer(){
 
     if(history.length>10) history.pop();
     renderHistory();
-    updateStats();
     chordPitchSelection.clear();
     chordPitchOrder=[];
     chordSequenceReviewIndex=0;
     reviewChordSeqBundle(0);
+
     const nextBtn=document.getElementById('next-btn');
     if(autoAdvance){
       nextBtn.style.display='none';
-      // Do not auto-skip immediately; user needs time to review each bundle.
     }else{
       nextBtn.style.display='block';
     }
@@ -2296,7 +2305,7 @@ function updateChordSequenceFeedback(){
   const fb=document.getElementById('feedback');
   if(questionMode!=='chordseq'||!fb) return;
   const total=currentChordSequence.length;
-  fb.textContent=`重音連続 ${chordSequenceIndex+1}/${total} — この束を選択 → Checkで次の束へ。最後にまとめて答え合わせ`;
+  fb.textContent=`重音連続 ${chordSequenceIndex+1}/${total} — Checkで束ごとに判定し、緑/赤を付けて次へ`;
   fb.className='feedback-bar wait';
 }
 
@@ -2426,7 +2435,7 @@ function nextQuestion(){
     fb.textContent='';
     fb.className='feedback-bar wait compact-hide';
   }else if(questionMode==='chordseq'){
-    fb.textContent=`重音連続 1/${currentChordSequence.length} — この束を選択 → Checkで次の束へ。最後にまとめて答え合わせ`;
+    fb.textContent=`重音連続 1/${currentChordSequence.length} — Checkで束ごとに判定し、緑/赤を付けて次へ`;
     fb.className='feedback-bar wait';
   }else if(questionMode==='sequence'){
     fb.textContent=`連続読み 1/${currentSequence.length} — ${fiveFingerMode?'5本範囲':'広め'} / ${sequenceLength==='random'?'2-5 random':currentSequenceTargetLength+' notes'} / 左から順に読む`;
@@ -2695,7 +2704,8 @@ function renderStaff(){
 
   function finishViewBox(extraTop,extraBottom){
     const notesToMeasure=questionMode==='chordseq'&&currentChordSequence.length?currentChordSequence.flatMap(c=>c.notes):(questionMode==='sequence'&&currentSequence.length?currentSequence:((questionMode==='chord'&&currentChord)?currentChord.notes:[currentNote]));
-    const ys=notesToMeasure.map(n=>getNoteY(n,currentClef,topLineY,ls));
+    const safeNotes=(notesToMeasure&&notesToMeasure.length)?notesToMeasure:[currentNote||{n:'C',o:4}];
+    const ys=safeNotes.map(n=>getNoteY(n,currentClef,topLineY,ls));
     const minY=Math.min(...ys), maxY=Math.max(...ys);
     const contentTop=Math.min(topLineY-20,minY-34, currentClef==='treble'?6:10)-extraTop;
     const contentBottom=Math.max(bottomLine+18,maxY+32, currentClef==='treble'?84:86)+extraBottom;
@@ -3431,13 +3441,19 @@ function initApp(){
   updatePracticeSummary();
 
   requestAnimationFrame(()=>forceInitialStaffRender());
-  setTimeout(()=>forceInitialStaffRender(),120);
-  setTimeout(()=>forceInitialStaffRender(),450);
+  requestAnimationFrame(()=>requestAnimationFrame(()=>forceInitialStaffRender()));
+  setTimeout(()=>forceInitialStaffRender(),60);
+  setTimeout(()=>forceInitialStaffRender(),180);
+  setTimeout(()=>forceInitialStaffRender(),500);
+  setTimeout(()=>forceInitialStaffRender(),1000);
 
   if(document.fonts && document.fonts.ready){
     document.fonts.ready.then(()=>forceInitialStaffRender()).catch(()=>{});
   }
 }
+
+window.addEventListener('load',()=>{ initApp(); forceInitialStaffRender(); setTimeout(forceInitialStaffRender,250); });
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden) forceInitialStaffRender(); });
 
 if(document.readyState==='loading'){
   document.addEventListener('DOMContentLoaded',initApp);
