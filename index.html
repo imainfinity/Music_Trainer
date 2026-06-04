@@ -715,7 +715,9 @@ input[type="range"]{accent-color:#7DB7FF;}
     <div class="chord-check-dock-row">
       <div class="chord-check-status" id="chord-check-status">重音 選択: 0 / 2</div>
       <button class="chord-undo-btn" onclick="undoLastChordPitch()">最後の音を消す</button>
+      <button class="chord-undo-btn" onclick="prevChordSeqReview()">前の束</button>
       <button class="chord-check-btn" onclick="submitChordAnswer()">ここで答え合わせ / Check</button>
+      <button class="chord-undo-btn" onclick="nextChordSeqReview()">次の束</button>
     </div>
   </div>
 
@@ -856,6 +858,8 @@ let sequenceResults=[];
 let currentChordSequence=[];
 let chordSequenceIndex=0;
 let chordSequenceResults=[];
+let chordSequenceSelections=[];
+let chordSequenceReviewIndex=0;
 let fiveFingerMode=true;
 let sequenceLength=5;
 let currentSequenceTargetLength=5;
@@ -1682,19 +1686,22 @@ function generateChordQuestion(){
 
 
 function generateChordQuestionSafe(){
-  // 5-FINGER ON means: do not create impossible wide grips.
-  // Keep generated chord within max one octave where possible.
-  if(!fiveFingerMode) return generateChordQuestion();
+  const ch=generateChordQuestion();
 
-  for(let i=0;i<30;i++){
-    const ch=generateChordQuestion();
-    if(chordSpanSemitones(ch.notes)<=12) return ch;
+  // 5-FINGER ON: maximum one octave, but still vary inversion/shape.
+  // Do not collapse everything into the same root-position close stack.
+  if(fiveFingerMode){
+    if(chordSpanSemitones(ch.notes)>12){
+      ch.notes=applyPlayableInversion(ch.notes,12);
+      ch.letters=[...new Set(ch.notes.map(n=>n.n))];
+      ch.label=ch.label.replace('Large Spread','Playable');
+      ch.voicingLabel='Playable';
+    }else if(ch.notes.length>=3 && Math.random()<0.65){
+      ch.notes=applyPlayableInversion(ch.notes,12);
+      ch.letters=[...new Set(ch.notes.map(n=>n.n))];
+    }
   }
 
-  const oldMode=chordVoicingMode;
-  chordVoicingMode='close';
-  const ch=generateChordQuestion();
-  chordVoicingMode=oldMode;
   return ch;
 }
 
@@ -1705,7 +1712,7 @@ function updateChordCheckDock(){
   const show=(questionMode==='chord'||questionMode==='chordseq');
   dock.classList.toggle('show',show);
   if(show){
-    const seqText=questionMode==='chordseq'?` ${chordSequenceIndex+1}/${Math.max(1,currentChordSequence.length)} /`:'';
+    const seqText=questionMode==='chordseq'?` ${Math.min(chordSequenceIndex+1,Math.max(1,currentChordSequence.length))}/${Math.max(1,currentChordSequence.length)} /`:'';
     status.textContent=`重音${seqText} 選択: ${chordPitchSelection.size} / ${currentChordSize}`;
   }
 }
@@ -1747,12 +1754,77 @@ function toggleChordSelection(n){
 function submitChordAnswer(){
   if(!(questionMode==='chord'||questionMode==='chordseq')||answered||!currentChord) return;
 
+  const fb=document.getElementById('feedback');
+  fb.classList.remove('compact-hide');
+
+  if(questionMode==='chordseq'){
+    // In chord sequence mode, Check is "next bundle" until the last bundle.
+    // The actual grading is done once after all bundles have been played/selected.
+    storeCurrentChordSeqSelection();
+
+    if(chordSequenceIndex < currentChordSequence.length-1){
+      chordSequenceIndex++;
+      currentChord=currentChordSequence[chordSequenceIndex];
+      currentNote=currentChord.notes[0];
+      chordPitchSelection.clear();
+      chordPitchOrder=[];
+      keyboardAutoPositionPending=true;
+      renderStaff();
+      renderKeyboard(null);
+      updateChordPanel();
+      updateChordSequenceFeedback();
+      return;
+    }
+
+    answered=true;
+    chordSequenceResults=currentChordSequence.map((ch,idx)=>gradeChordSeqSelection(ch,chordSequenceSelections[idx]||[]));
+    const ok=chordSequenceResults.filter(r=>r.correct).length;
+
+    // Count one attempt per bundle, then show summary.
+    stats.total+=currentChordSequence.length;
+    stats.correct+=ok;
+    stats.streak=(ok===currentChordSequence.length)?stats.streak+currentChordSequence.length:0;
+    currentChordSequence.forEach((ch,idx)=>{
+      const r=chordSequenceResults[idx];
+      ch.notes.forEach(n=>recordWeakPoint(n,(r.selected||[]).join('|'),r.correct,questionMode));
+    });
+
+    fb.textContent=`${ok===currentChordSequence.length?'✓':'△'} 重音連続 答え合わせ ${ok}/${currentChordSequence.length} — 束ごとに振り返り可能`;
+    fb.className=ok===currentChordSequence.length?'feedback-bar ok':'feedback-bar ng';
+
+    history.unshift({
+      chordseq:true,
+      note:'ChordSeq',
+      oct:'',
+      jp:currentChordSequence.map(c=>c.notes.map(pitchLabel).join('+')).join(' / '),
+      clef:currentClef,
+      correct:ok===currentChordSequence.length,
+      answered:chordSequenceResults.map(r=>r?r.selected.join('・'):'?').join(' / '),
+      answeredLabel:chordSequenceResults.map((r,idx)=>formatChordSelection(chordSequenceSelections[idx])).join(' / '),
+      keySig:selectedKeySig,
+      chordSequence:currentChordSequence,
+      notes:currentChordSequence.flatMap(c=>c.notes)
+    });
+
+    if(history.length>10) history.pop();
+    renderHistory();
+    updateStats();
+    chordSequenceReviewIndex=0;
+    reviewChordSeqBundle(0);
+    const nextBtn=document.getElementById('next-btn');
+    if(autoAdvance){
+      nextBtn.style.display='none';
+      // Do not auto-skip immediately; user needs time to review each bundle.
+    }else{
+      nextBtn.style.display='block';
+    }
+    return;
+  }
+
   const correctSet=new Set(currentChord.notes.map(pitchKey));
   const selected=[...chordPitchSelection];
   const correct=selected.length===correctSet.size && selected.every(k=>correctSet.has(k));
   const wrongPitchNotes=selected.filter(k=>!correctSet.has(k)).map(parsePitchKey).filter(Boolean);
-  const fb=document.getElementById('feedback');
-  fb.classList.remove('compact-hide');
 
   stats.total++;
   if(correct){stats.correct++;stats.streak++;}else{stats.streak=0;}
@@ -1767,75 +1839,31 @@ function submitChordAnswer(){
   renderKeyboard(currentChord.notes,wrongPitchNotes);
   updateStats();
 
-  if(questionMode==='chordseq'){
-    chordSequenceResults[chordSequenceIndex]={
-      correct,
-      answered:selected.join('・')||'—',
-      answeredLabel:selected.map(k=>pitchLabel(parsePitchKey(k))).join('・')||'—',
-      notes:currentChord.notes,
-      wrongNotes:wrongPitchNotes
-    };
-
-    chordSequenceIndex++;
-    chordPitchSelection.clear();
-    chordPitchOrder=[];
-
-    if(chordSequenceIndex<currentChordSequence.length){
-      currentChord=currentChordSequence[chordSequenceIndex];
-      currentNote=currentChord.notes[0];
-      keyboardAutoPositionPending=true;
-      renderStaff();
-      renderKeyboard(null);
-      updateChordPanel();
-      updateChordSequenceFeedback();
-      return;
-    }
-
-    answered=true;
-    const ok=chordSequenceResults.filter(r=>r&&r.correct).length;
-    fb.textContent=`${ok===currentChordSequence.length?'✓':'△'} 重音連続完了 ${ok}/${currentChordSequence.length}`;
-    fb.className=ok===currentChordSequence.length?'feedback-bar ok':'feedback-bar ng';
-
-    history.unshift({
-      chordseq:true,
-      note:'ChordSeq',
-      oct:'',
-      jp:currentChordSequence.map(c=>c.notes.map(pitchLabel).join('+')).join(' / '),
-      clef:currentClef,
-      correct:ok===currentChordSequence.length,
-      answered:chordSequenceResults.map(r=>r?r.answered:'?').join(' / '),
-      answeredLabel:chordSequenceResults.map(r=>r?r.answeredLabel:'?').join(' / '),
-      keySig:selectedKeySig,
-      chordSequence:currentChordSequence,
-      notes:currentChordSequence.flatMap(c=>c.notes)
-    });
+  answered=true;
+  if(correct){
+    fb.textContent=`✓ 正解！ ${currentChord.label} — ${currentChord.notes.map(pitchLabel).join('・')}`;
+    fb.className='feedback-bar ok';
   }else{
-    answered=true;
-    if(correct){
-      fb.textContent=`✓ 正解！ ${currentChord.label} — ${currentChord.notes.map(pitchLabel).join('・')}`;
-      fb.className='feedback-bar ok';
-    }else{
-      fb.textContent=`✗ 不正解 → ${currentChord.label} / 正解: ${currentChord.notes.map(pitchLabel).join('・')}`;
-      fb.className='feedback-bar ng';
-    }
-    history.unshift({
-      chord:true,
-      label:currentChord.label,
-      note:'Chord',
-      oct:'',
-      jp:currentChord.notes.map(pitchLabel).join('・'),
-      clef:currentClef,
-      correct,
-      answered:selected.join('・')||'—',
-      answeredLabel:selected.map(k=>pitchLabel(parsePitchKey(k))).join('・')||'—',
-      keySig:selectedKeySig,
-      notes:currentChord.notes,
-      letters:currentChord.letters,
-      wrongNotes:wrongPitchNotes,
-      voicingType:currentChord.voicingType,
-      voicingLabel:currentChord.voicingLabel
-    });
+    fb.textContent=`✗ 不正解 → ${currentChord.label} / 正解: ${currentChord.notes.map(pitchLabel).join('・')}`;
+    fb.className='feedback-bar ng';
   }
+  history.unshift({
+    chord:true,
+    label:currentChord.label,
+    note:'Chord',
+    oct:'',
+    jp:currentChord.notes.map(pitchLabel).join('・'),
+    clef:currentClef,
+    correct,
+    answered:selected.join('・')||'—',
+    answeredLabel:selected.map(k=>pitchLabel(parsePitchKey(k))).join('・')||'—',
+    keySig:selectedKeySig,
+    notes:currentChord.notes,
+    letters:currentChord.letters,
+    wrongNotes:wrongPitchNotes,
+    voicingType:currentChord.voicingType,
+    voicingLabel:currentChord.voicingLabel
+  });
 
   if(history.length>10) history.pop();
   renderHistory();
@@ -1941,6 +1969,62 @@ function diatonicStep(note){
 }
 
 
+
+function formatChordSelection(keys){
+  return (keys||[]).map(k=>pitchLabel(parsePitchKey(k))).join('・')||'—';
+}
+
+function storeCurrentChordSeqSelection(){
+  chordSequenceSelections[chordSequenceIndex]=[...chordPitchSelection];
+}
+
+function gradeChordSeqSelection(chord,keys){
+  const correctSet=new Set(chord.notes.map(pitchKey));
+  const selected=keys||[];
+  const correct=selected.length===correctSet.size && selected.every(k=>correctSet.has(k));
+  const wrongPitchNotes=selected.filter(k=>!correctSet.has(k)).map(parsePitchKey).filter(Boolean);
+  return {correct,selected,wrongPitchNotes};
+}
+
+function reviewChordSeqBundle(idx){
+  if(questionMode!=='chordseq'||!answered||!currentChordSequence.length) return;
+  chordSequenceReviewIndex=Math.max(0,Math.min(idx,currentChordSequence.length-1));
+  currentChord=currentChordSequence[chordSequenceReviewIndex];
+  currentNote=currentChord.notes[0];
+  const r=chordSequenceResults[chordSequenceReviewIndex]||gradeChordSeqSelection(currentChord,chordSequenceSelections[chordSequenceReviewIndex]||[]);
+  renderStaff();
+  renderKeyboard(currentChord.notes,r.wrongPitchNotes||[]);
+  updateChordPanel();
+  const fb=document.getElementById('feedback');
+  const mark=r.correct?'✓':'✗';
+  fb.textContent=`${mark} 束 ${chordSequenceReviewIndex+1}/${currentChordSequence.length} / 正解: ${currentChord.notes.map(pitchLabel).join('・')} / 選択: ${formatChordSelection(chordSequenceSelections[chordSequenceReviewIndex])}`;
+  fb.className=r.correct?'feedback-bar ok':'feedback-bar ng';
+}
+
+function nextChordSeqReview(){
+  if(questionMode==='chordseq'&&answered) reviewChordSeqBundle(chordSequenceReviewIndex+1);
+}
+function prevChordSeqReview(){
+  if(questionMode==='chordseq'&&answered) reviewChordSeqBundle(chordSequenceReviewIndex-1);
+}
+
+function applyPlayableInversion(notes,maxSpan=12){
+  // Keep the grip playable while avoiding the same stacked root-position shape.
+  const base=normalizePlayableChord(notes,currentClef).sort((a,b)=>noteToMidi(a)-noteToMidi(b));
+  const candidates=[];
+  for(let rot=0;rot<base.length;rot++){
+    let cand=base.map(n=>({...n}));
+    for(let i=0;i<rot;i++) cand[i].o+=1;
+    cand=normalizePlayableChord(cand,currentClef).sort((a,b)=>noteToMidi(a)-noteToMidi(b));
+    if(chordSpanSemitones(cand)<=maxSpan){
+      const key=cand.map(pitchKey).join(',');
+      if(!candidates.some(c=>c.key===key)) candidates.push({key,notes:cand});
+    }
+  }
+  if(candidates.length===0) return base;
+  return candidates[Math.floor(Math.random()*candidates.length)].notes;
+}
+
 function generateChordSequenceQuestion(){
   const len=Math.random()<0.65?3:4;
   const seq=[];
@@ -1960,7 +2044,7 @@ function updateChordSequenceFeedback(){
   const fb=document.getElementById('feedback');
   if(questionMode!=='chordseq'||!fb) return;
   const total=currentChordSequence.length;
-  fb.textContent=`重音連続 ${chordSequenceIndex+1}/${total} — 左から順に、各重音を鍵盤で選択`;
+  fb.textContent=`重音連続 ${chordSequenceIndex+1}/${total} — この束を選択 → Checkで次の束へ。最後にまとめて答え合わせ`;
   fb.className='feedback-bar wait';
 }
 
@@ -2057,6 +2141,8 @@ function nextQuestion(){
   currentChordSequence=[];
   chordSequenceIndex=0;
   chordSequenceResults=[];
+  chordSequenceSelections=[];
+  chordSequenceReviewIndex=0;
   document.getElementById('next-btn').style.display='none';
   if(clefMode==='treble') currentClef='treble';
   else if(clefMode==='bass') currentClef='bass';
@@ -2088,7 +2174,7 @@ function nextQuestion(){
     fb.textContent='';
     fb.className='feedback-bar wait compact-hide';
   }else if(questionMode==='chordseq'){
-    fb.textContent=`重音連続 1/${currentChordSequence.length} — 左から順に、各重音を鍵盤で選択`;
+    fb.textContent=`重音連続 1/${currentChordSequence.length} — この束を選択 → Checkで次の束へ。最後にまとめて答え合わせ`;
     fb.className='feedback-bar wait';
   }else if(questionMode==='sequence'){
     fb.textContent=`連続読み 1/${currentSequence.length} — ${fiveFingerMode?'5本範囲':'広め'} / ${sequenceLength==='random'?'2-5 random':currentSequenceTargetLength+' notes'} / 左から順に読む`;
@@ -2445,7 +2531,9 @@ function renderStaff(){
           strokeColor=color;
         }else if(ci===chordSequenceIndex){
           color='#2D5FA3'; strokeColor='#102F62';
-          el('rect',{x:baseX-24,y:topLineY-18,width:58,height:bottomLine-topLineY+36,rx:12,fill:'none',stroke:'rgba(45,95,163,.22)','stroke-width':2},svg);
+          const box=el('rect',{x:baseX-24,y:topLineY-18,width:58,height:bottomLine-topLineY+36,rx:12,fill:'rgba(45,95,163,.045)',stroke:'rgba(45,95,163,.28)','stroke-width':2},svg);
+          box.style.cursor='pointer';
+          box.addEventListener('click',()=>{ if(answered) reviewChordSeqBundle(ci); });
         }else{
           color='#7C8AA0'; strokeColor='#657184';
         }
@@ -2465,6 +2553,9 @@ function renderStaff(){
         const stemColor=ci<chordSequenceIndex?(chordSequenceResults[ci]&&chordSequenceResults[ci].correct?'#23A45A':'#C43B4B'):nc;
         el('line',{x1:sx,x2:sx,y1:y1,y2:y2,stroke:stemColor,'stroke-width':2.2,'stroke-linecap':'round'},svg);
       }
+      const clickLayer=el('rect',{x:baseX-30,y:topLineY-24,width:66,height:bottomLine-topLineY+48,rx:12,fill:'transparent'},svg);
+      clickLayer.style.cursor='pointer';
+      clickLayer.addEventListener('click',()=>{ if(answered) reviewChordSeqBundle(ci); });
       placedSeq.push(...chordPlaced);
     });
     finishViewBox(0,0);
