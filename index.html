@@ -1600,7 +1600,7 @@ function updateChordPanel(){
   if(count) count.textContent=`選択: ${chordPitchSelection.size} / ${chordSize}`;
   if(info&&currentChord){
     const span=chordSpanSemitones(currentChord.notes);
-    info.textContent=`${currentChord.label}　鍵盤で実音 ${chordSize}音を選択してください。C♭はB鍵、F♭はE鍵で判定します。低音域ではB1なども自動表示します。譜面スパン: ${span}半音`;
+    info.textContent=`${currentChord.label}　鍵盤で実音 ${chordSize}音を選択してください。C♭はB鍵、F♭はE鍵で判定します。B♭とC♭のような隣接音でも白鍵下部を押せます。低音域ではB1なども自動表示します。譜面スパン: ${span}半音`;
   }
   updateChordPitchRow();
   updateChordCheckDock();
@@ -2141,7 +2141,7 @@ function renderKeyboard(answerNote,wrongNote=[]){
   const octaves=[];
   for(let o=minOct;o<=maxOct;o++) octaves.push(o);
 
-  const WW=28, WH=82, BW=17, BH=52;
+  const WW=28, WH=82, BW=15, BH=50;
   const totalW=octaves.length*7*WW;
   wrap.style.width=totalW+'px';
   wrap.style.height=(WH+6)+'px';
@@ -2187,9 +2187,29 @@ function renderKeyboard(answerNote,wrongNote=[]){
       lbl.style.cssText=`font-size:8px;font-family:'DM Mono',monospace;color:${isAns?'#12723E':(isWrong?'#B52A3A':'#CCC')};line-height:1;flex-shrink:0;`;
       lbl.textContent=n+oct;
       d.appendChild(lbl);
-      d.addEventListener('mousedown',e=>{e.preventDefault();if(questionMode==='chord'){toggleChordPitch(keyNote);}else{lastKeyboardPitch=keyNote;selectNote(n);}});
-      d.addEventListener('touchstart',e=>{e.preventDefault();if(questionMode==='chord'){toggleChordPitch(keyNote);}else{lastKeyboardPitch=keyNote;selectNote(n);}},{passive:false});
+      const whiteKeyHandler=(e)=>{
+        e.preventDefault();
+        if(questionMode==='chord'){
+          toggleChordPitch(keyNote);
+        }else{
+          lastKeyboardPitch=keyNote;
+          selectNote(n);
+        }
+      };
+      d.addEventListener('mousedown',whiteKeyHandler);
+      d.addEventListener('touchstart',whiteKeyHandler,{passive:false});
       wrap.appendChild(d);
+
+      // Extra lower touch zone for white keys.
+      // This keeps B/E white keys tappable when adjacent flats like B♭ + C♭ appear together.
+      // It does not cover black keys because it starts below the black-key height.
+      const hit=document.createElement('div');
+      hit.style.cssText=`position:absolute;left:${x}px;top:${BH+2}px;width:${WW-1}px;height:${WH-BH-2}px;`
+        +`z-index:5;background:transparent;cursor:pointer;`;
+      hit.addEventListener('mousedown',whiteKeyHandler);
+      hit.addEventListener('touchstart',whiteKeyHandler,{passive:false});
+      wrap.appendChild(hit);
+
       if(isAns) answerDiv=d;
       if(isAns||isWrong) highlightDivs.push(d);
       if(isTarget) targetDiv=d;
