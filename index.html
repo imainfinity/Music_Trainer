@@ -1012,7 +1012,7 @@ function toggleKeyboardMode(){
       ? '設問の音に合わせて鍵盤を自動で中央へ動かします'
       : '鍵盤位置を固定し、自分で横スクロールします';
   }
-  renderKeyboard(answered?currentNote:null);
+  renderKeyboard(answered?(questionMode==='chord'&&currentChord?currentChord.notes:currentNote):null);
 }
 
 function toggleKeyTip(){
@@ -1302,6 +1302,226 @@ function toggleChordPitch(note){
     chordPitchOrder.push(key);
   }
   renderKeyboard(null);
+  updateChordPanel();
+}
+
+function pickVoicingType(){
+  if(chordVoicingMode!=='mixed') return chordVoicingMode;
+  const pool=chordSize===2
+    ? ['close','open','wide','wide']
+    : ['close','open','wide','open','wide','wide'];
+  return pool[Math.floor(Math.random()*pool.length)];
+}
+
+function pickWeighted(items){
+  const total=items.reduce((s,x)=>s+(x.w||1),0);
+  let r=Math.random()*total;
+  for(const item of items){
+    r-=item.w||1;
+    if(r<=0) return item;
+  }
+  return items[items.length-1];
+}
+
+function buildPlayableDyad(scale,degree,voicingType){
+  // Two-note mode:
+  // Close = near notes.
+  // Open = medium spread.
+  // Large Spread = real score-style wide intervals beyond one octave when possible.
+  const patterns = voicingType==='wide'
+    ? [
+        {a:0,b:9,w:4,name:'10th'},
+        {a:0,b:11,w:4,name:'12th'},
+        {a:0,b:14,w:3,name:'Double octave'},
+        {a:1,b:12,w:2,name:'Wide 10th'},
+        {a:0,b:7,w:1,name:'Octave'}
+      ]
+    : voicingType==='open'
+      ? [
+          {a:0,b:6,w:3,name:'7th'},
+          {a:0,b:7,w:3,name:'Octave'},
+          {a:0,b:5,w:2,name:'6th'},
+          {a:1,b:7,w:1,name:'6th'}
+        ]
+      : [
+          {a:0,b:2,w:4,name:'3rd'},
+          {a:0,b:4,w:3,name:'5th'},
+          {a:0,b:3,w:1,name:'4th'}
+        ];
+
+  const candidates=[];
+  patterns.forEach(p=>{
+    const low=scale[degree+p.a];
+    const high=scale[degree+p.b];
+    if(!low||!high) return;
+    let notes=[clampIntoClefRange({...low},currentClef),clampIntoClefRange({...high},currentClef)]
+      .sort((a,b)=>noteToMidi(a)-noteToMidi(b));
+    if(voicingType==='wide') notes=spreadNotesIntoClef(notes,currentClef,14,24);
+    else if(voicingType==='open') notes=spreadNotesIntoClef(notes,currentClef,9,14);
+    else notes=normalizePlayableChord(notes,currentClef);
+    const span=chordSpanSemitones(notes);
+    if(span>=3) candidates.push({...p,notes,span});
+  });
+
+  if(candidates.length===0){
+    return {notes:normalizePlayableChord([{...scale[degree]},{...scale[degree+2]}],currentClef), intervalName:'3rd'};
+  }
+
+  if(voicingType==='wide'){
+    candidates.sort((a,b)=>b.span-a.span);
+    const maxSpan=candidates[0].span;
+    const nearMax=candidates.filter(c=>c.span>=Math.max(14,maxSpan-3));
+    const chosen=pickWeighted(nearMax);
+    return {notes:chosen.notes, intervalName:chosen.name};
+  }
+
+  const chosen=pickWeighted(candidates);
+  return {notes:chosen.notes, intervalName:chosen.name};
+}
+
+function applyChordVoicing(notes,voicingType){
+  let out=notes.map(n=>({...n}));
+
+  if(voicingType==='close'){
+    return normalizePlayableChord(out,currentClef);
+  }
+
+  if(voicingType==='open'){
+    if(out.length===3){
+      // first inversion style, medium spread
+      out=[{...out[1]},{...out[2]},{...out[0],o:out[0].o+1}];
+    }else if(out.length===4){
+      out=[{...out[1]},{...out[2]},{...out[3]},{...out[0],o:out[0].o+1}];
+    }
+    return spreadNotesIntoClef(out,currentClef,10,16);
+  }
+
+  if(voicingType==='wide'){
+    if(out.length===3){
+      // Real-score wide: bass note + upper chord tones far above.
+      out=[
+        {...out[0],o:out[0].o-1},
+        {...out[2]},
+        {...out[1],o:out[1].o+1}
+      ];
+    }else if(out.length===4){
+      // Wide stacked color: bass low, inner voices, top high.
+      out=[
+        {...out[0],o:out[0].o-1},
+        {...out[2]},
+        {...out[3],o:out[3].o+1},
+        {...out[1],o:out[1].o+1}
+      ];
+    }
+    return spreadNotesIntoClef(out,currentClef,14,24);
+  }
+
+  return normalizePlayableChord(out,currentClef);
+}
+
+function getMajorRootLetter(){
+  const root=(selectedKeySig.label||'C').split('/')[0].trim();
+  return root.replace(/[#b♯♭]/g,'').charAt(0) || 'C';
+}
+
+function buildLetterScale(rootLetter,baseOct){
+  const order=['C','D','E','F','G','A','B'];
+  const start=order.indexOf(rootLetter);
+  let oct=baseOct;
+  const result=[];
+  for(let i=0;i<16;i++){
+    const idx=(start+i)%7;
+    const letter=order[idx];
+    if(i>0 && letter==='C') oct++;
+    result.push({n:letter,o:oct});
+  }
+  return result;
+}
+
+function getDiatonicChordQuality(deg,size){
+  const roman3=['I','ii','iii','IV','V','vi','vii°'];
+  const roman4=['Imaj7','ii7','iii7','IVmaj7','V7','vi7','viiø7'];
+  if(size===4) return roman4[deg];
+  if(size===2) return roman3[deg]+' dyad';
+  return roman3[deg];
+}
+
+function generateChordQuestion(){
+  const rootLetter=getMajorRootLetter();
+  const baseOct=currentClef==='treble'?4:2;
+  const scale=buildLetterScale(rootLetter,baseOct);
+  const degree=Math.floor(Math.random()*7);
+  const offsets=chordSize===2?[0,2]:(chordSize===3?[0,2,4]:[0,2,4,6]);
+  const voicingType=pickVoicingType();
+  const quality=getDiatonicChordQuality(degree,chordSize);
+  const voicingLabel={close:'Close',open:'Open',wide:'Large Spread'}[voicingType]||'Mixed';
+
+  let closeNotes, notes, intervalName='';
+  if(chordSize===2){
+    const dyad=buildPlayableDyad(scale,degree,voicingType);
+    notes=dyad.notes;
+    closeNotes=notes;
+    intervalName=dyad.intervalName;
+  }else{
+    closeNotes=offsets.map(o=>scale[degree+o]);
+    notes=applyChordVoicing(closeNotes,voicingType);
+  }
+
+  const letters=[...new Set(notes.map(n=>n.n))];
+  return {
+    notes,
+    letters,
+    degree,
+    quality,
+    voicingType,
+    voicingLabel,
+    intervalName,
+    label:`${selectedKeySig.jp} — ${quality} / ${voicingLabel}${intervalName?' / '+intervalName:''}`,
+    jp:`正解: ${letters.join('・')}`
+  };
+}
+
+function updateChordCheckDock(){
+  const dock=document.getElementById('chord-check-dock');
+  const status=document.getElementById('chord-check-status');
+  if(!dock||!status) return;
+  const show=(questionMode==='chord');
+  dock.classList.toggle('show',show);
+  if(show){
+    status.textContent=`重音 選択: ${chordPitchSelection.size} / ${chordSize}`;
+  }
+}
+
+function updateChordPanel(){
+  const count=document.getElementById('chord-selected-count');
+  const info=document.getElementById('chord-info');
+  if(count) count.textContent=`選択: ${chordPitchSelection.size} / ${chordSize}`;
+  if(info&&currentChord){
+    const span=chordSpanSemitones(currentChord.notes);
+    info.textContent=`${currentChord.label}　鍵盤で実音 ${chordSize}音を選択してください。譜面スパン: ${span}半音`;
+  }
+  updateChordPitchRow();
+  updateChordCheckDock();
+}
+
+function clearChordSelection(){
+  if(answered) return;
+  chordSelection.clear();
+  chordPitchSelection.clear();
+  chordPitchOrder=[];
+  document.querySelectorAll('.note-btn').forEach(b=>b.classList.remove('selected','correct','wrong'));
+  renderKeyboard(null);
+  updateChordPanel();
+}
+
+function toggleChordSelection(n){
+  if(answered) return;
+  if(chordSelection.has(n)) chordSelection.delete(n);
+  else chordSelection.add(n);
+  document.querySelectorAll('.note-btn').forEach(b=>{
+    const en=b.querySelector('.en').textContent;
+    b.classList.toggle('selected',chordSelection.has(en));
+  });
   updateChordPanel();
 }
 
