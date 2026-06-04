@@ -566,9 +566,12 @@ input[type="range"]{accent-color:#7DB7FF;}
   <div class="sound-control-bar">
     <div>
       <div class="sound-control-label">Sound — 音確認</div>
-      <div class="sound-control-help" id="sound-help">OFF：音は鳴りません</div>
+      <div class="sound-control-help" id="sound-help">OFF：音は鳴りません / PIANO SAMPLE対応</div>
     </div>
-    <button class="sound-btn" id="sound-toggle-btn" onclick="toggleSound()">SOUND OFF</button>
+    <div style="display:flex;gap:8px;width:auto;flex-wrap:wrap;">
+      <button class="sound-btn" id="sound-toggle-btn" onclick="toggleSound()">SOUND OFF</button>
+      <button class="sound-btn" onclick="playSoundTest()">TEST</button>
+    </div>
   </div>
 
   <!-- key sig panel -->
@@ -781,23 +784,75 @@ function ensureAudio(){
   if(typeof audioCtx==='undefined' || !audioCtx){
     audioCtx=new(window.AudioContext||window.webkitAudioContext)();
   }
-  if(audioCtx.state==='suspended') audioCtx.resume();
+  if(audioCtx.state==='suspended'){
+    audioCtx.resume().catch(()=>{});
+  }
   soundUnlocked=true;
   return audioCtx;
 }
 
-function toggleSound(){
+async function unlockAudio(){
+  const ctx=ensureAudio();
+  if(ctx.state==='suspended'){
+    try{ await ctx.resume(); }catch(e){}
+  }
+  soundUnlocked=true;
+  return ctx;
+}
+
+const PIANO_SAMPLE_BASE='https://gleitz.github.io/midi-js-soundfonts/FluidR3_GM/acoustic_grand_piano-mp3/';
+const pianoSampleCache={};
+let pianoSampleFailed=false;
+
+function sampleNameFromMidi(midi){
+  const names=['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
+  const pc=((midi%12)+12)%12;
+  const oct=Math.floor(midi/12)-1;
+  return names[pc]+oct;
+}
+
+async function loadPianoSampleByName(name){
+  if(pianoSampleCache[name]) return pianoSampleCache[name];
+  const ctx=ensureAudio();
+  const url=PIANO_SAMPLE_BASE+name+'.mp3';
+  const res=await fetch(url,{mode:'cors',cache:'force-cache'});
+  if(!res.ok) throw new Error('sample fetch failed '+name);
+  const arr=await res.arrayBuffer();
+  const decoded=await ctx.decodeAudioData(arr);
+  pianoSampleCache[name]=decoded;
+  return decoded;
+}
+
+function updateSoundHelp(msg){
+  const help=document.getElementById('sound-help');
+  if(help) help.textContent=msg;
+}
+
+async function preloadQuestionSamples(){
+  if(!soundEnabled) return;
+  const list=(questionMode==='chord'&&currentChord)?currentChord.notes:(currentNote?[currentNote]:[]);
+  const names=[...new Set(list.map(n=>sampleNameFromMidi(midiFromNote(n))))];
+  try{
+    await Promise.all(names.map(loadPianoSampleByName));
+  }catch(e){
+    pianoSampleFailed=true;
+    updateSoundHelp('ピアノサンプル取得に失敗。内蔵シンセにフォールバックします');
+  }
+}
+
+async function toggleSound(){
   soundEnabled=!soundEnabled;
   const btn=document.getElementById('sound-toggle-btn');
-  const help=document.getElementById('sound-help');
   if(soundEnabled){
-    ensureAudio();
+    await unlockAudio();
     if(btn){btn.textContent='SOUND ON';btn.classList.add('on');}
-    if(help) help.textContent='ON：出題音・鍵盤タップ・答え合わせ後の正解音を鳴らします';
-    setTimeout(()=>playCurrentQuestion(),80);
+    updateSoundHelp('ON：初回だけピアノ音源を読み込みます。以後はキャッシュ再生します');
+    await preloadQuestionSamples();
+    playSoundTest(true);
+    setTimeout(()=>playCurrentQuestion(),360);
   }else{
     if(btn){btn.textContent='SOUND OFF';btn.classList.remove('on');}
-    if(help) help.textContent='OFF：音は鳴りません';
+    updateSoundHelp('OFF：音は鳴りません');
   }
 }
 
@@ -813,7 +868,7 @@ function freqFromMidi(midi){
   return 440*Math.pow(2,(midi-69)/12);
 }
 
-function playPianoTone(note,when=0,duration=1.1,gainLevel=.18){
+function playSynthTone(note,when=0,duration=1.05,gainLevel=.20){
   if(!soundEnabled || !note) return;
   const ctx=ensureAudio();
   const t=ctx.currentTime+when;
@@ -821,56 +876,73 @@ function playPianoTone(note,when=0,duration=1.1,gainLevel=.18){
 
   const out=ctx.createGain();
   out.gain.setValueAtTime(0.0001,t);
-  out.gain.exponentialRampToValueAtTime(gainLevel,t+0.015);
-  out.gain.exponentialRampToValueAtTime(gainLevel*0.55,t+0.12);
+  out.gain.exponentialRampToValueAtTime(gainLevel,t+0.012);
+  out.gain.exponentialRampToValueAtTime(gainLevel*0.58,t+0.11);
   out.gain.exponentialRampToValueAtTime(0.0001,t+duration);
   out.connect(ctx.destination);
 
   const partials=[
-    {mul:1,g:1.0},
-    {mul:2.01,g:.30},
-    {mul:3.02,g:.14},
-    {mul:4.01,g:.07}
+    {mul:1,g:1.0,type:'triangle'},
+    {mul:2.01,g:.34,type:'sine'},
+    {mul:3.02,g:.16,type:'sine'},
+    {mul:4.01,g:.08,type:'sine'}
   ];
-  partials.forEach((p,idx)=>{
+  partials.forEach((p)=>{
     const osc=ctx.createOscillator();
     const g=ctx.createGain();
-    osc.type=idx===0?'triangle':'sine';
+    osc.type=p.type;
     osc.frequency.setValueAtTime(freq*p.mul,t);
-    g.gain.setValueAtTime((gainLevel*p.g)/(partials.length*1.15),t);
+    g.gain.setValueAtTime(gainLevel*p.g,t);
     osc.connect(g);g.connect(out);
     osc.start(t);osc.stop(t+duration+0.04);
   });
+}
 
-  const noiseDur=0.025;
-  const buffer=ctx.createBuffer(1,Math.max(1,Math.floor(ctx.sampleRate*noiseDur)),ctx.sampleRate);
-  const data=buffer.getChannelData(0);
-  for(let i=0;i<data.length;i++) data[i]=(Math.random()*2-1)*Math.pow(1-i/data.length,2);
-  const noise=ctx.createBufferSource();
-  const ng=ctx.createGain();
-  const hp=ctx.createBiquadFilter();
-  hp.type='highpass';hp.frequency.setValueAtTime(1800,t);
-  ng.gain.setValueAtTime(gainLevel*.055,t);
-  ng.gain.exponentialRampToValueAtTime(0.0001,t+noiseDur);
-  noise.buffer=buffer;
-  noise.connect(hp);hp.connect(ng);ng.connect(ctx.destination);
-  noise.start(t);noise.stop(t+noiseDur);
+async function playPianoTone(note,when=0,duration=1.55,gainLevel=.55){
+  if(!soundEnabled || !note) return;
+  const ctx=ensureAudio();
+  const midi=midiFromNote(note);
+  const name=sampleNameFromMidi(midi);
+
+  if(pianoSampleFailed){
+    playSynthTone(note,when,.9,.20);
+    return;
+  }
+
+  try{
+    const buffer=await loadPianoSampleByName(name);
+    const t=ctx.currentTime+when;
+    const src=ctx.createBufferSource();
+    const g=ctx.createGain();
+    src.buffer=buffer;
+    g.gain.setValueAtTime(0.0001,t);
+    g.gain.exponentialRampToValueAtTime(gainLevel,t+0.012);
+    g.gain.exponentialRampToValueAtTime(gainLevel*.78,t+0.25);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+duration);
+    src.connect(g);g.connect(ctx.destination);
+    src.start(t);
+    src.stop(t+Math.min(duration+0.08,buffer.duration));
+  }catch(e){
+    pianoSampleFailed=true;
+    updateSoundHelp('ピアノサンプル取得に失敗。内蔵シンセにフォールバックします');
+    playSynthTone(note,when,.9,.20);
+  }
 }
 
 function playNotes(notes,spread=false){
   if(!soundEnabled) return;
   const list=(Array.isArray(notes)?notes:[notes]).filter(Boolean);
   if(list.length===0) return;
-  const gain=Math.min(.16,.28/Math.sqrt(list.length));
-  list.forEach((n,i)=>playPianoTone(n,spread?i*.08:0,1.15,gain));
+  const gain=Math.min(.62,.86/Math.sqrt(list.length));
+  list.forEach((n,i)=>playPianoTone(n,spread?i*.09:0,1.7,gain));
 }
 
-function playCurrentQuestion(){
+async function playCurrentQuestion(){
   if(!soundEnabled){
-    const help=document.getElementById('sound-help');
-    if(help) help.textContent='SOUND ONにすると問題音を再生できます';
+    updateSoundHelp('SOUND ONにすると問題音を再生できます');
     return;
   }
+  await preloadQuestionSamples();
   if(questionMode==='chord'&&currentChord) playNotes(currentChord.notes,false);
   else if(currentNote) playNotes(currentNote,false);
 }
@@ -883,7 +955,26 @@ function playAnswerSound(){
 
 function playSelectedNoteSound(note){
   if(!soundEnabled||!note) return;
-  playPianoTone(note,0,.75,.16);
+  playPianoTone(note,0,.95,.46);
+}
+
+async function playSoundTest(skipEnable=false){
+  if(!skipEnable){
+    soundEnabled=true;
+    const btn=document.getElementById('sound-toggle-btn');
+    await unlockAudio();
+    if(btn){btn.textContent='SOUND ON';btn.classList.add('on');}
+    updateSoundHelp('音テストを再生します。初回はピアノ音源を読み込みます');
+  }
+  const testNotes=[{n:'C',o:4},{n:'E',o:4},{n:'G',o:4}];
+  try{
+    await Promise.all(testNotes.map(n=>loadPianoSampleByName(sampleNameFromMidi(midiFromNote(n)))));
+    updateSoundHelp('PIANO SAMPLE再生中：C4・E4・G4');
+  }catch(e){
+    pianoSampleFailed=true;
+    updateSoundHelp('サンプル取得不可。内蔵シンセでテスト再生します');
+  }
+  playNotes(testNotes,true);
 }
 
 function toggleKeyboardMode(){
