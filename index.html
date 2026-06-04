@@ -2472,7 +2472,14 @@ function submitChordAnswer(autoTriggered=false){
       chordAutoSubmitting=false;
 
       const nextBtn=document.getElementById('next-btn');
-      if(nextBtn) nextBtn.style.display=autoAdvance?'none':'block';
+      if(shouldAutoMoveNext()){
+        if(nextBtn) nextBtn.style.display='none';
+        // In time attack / auto mode, the end of a 5- or 10-bundle chord sequence
+        // is treated as one completed question set. Do not wait for the Next button.
+        scheduleNextQuestionAfterAnswer(timeAttackActive?650:1500);
+      }else{
+        if(nextBtn) nextBtn.style.display='block';
+      }
       return;
 
     }catch(err){
@@ -2551,7 +2558,7 @@ function submitChordAnswer(autoTriggered=false){
   const nextBtn=document.getElementById('next-btn');
   if(shouldAutoMoveNext()){
     nextBtn.style.display='none';
-    autoTimer=setTimeout(()=>{ if(answered&&reviewingIdx===null&&!document.getElementById('result-modal-backdrop')?.classList.contains('show')) nextQuestion(); },timeAttackActive?450:1500);
+    scheduleNextQuestionAfterAnswer(timeAttackActive?450:1500);
   }else{
     nextBtn.style.display='block';
   }
@@ -2738,7 +2745,7 @@ function updateChordSequenceFeedback(){
   const total=currentChordSequence.length;
   // Do not overwrite the green/red result message immediately after advancing.
   if(!fb.textContent.includes('→')){
-    fb.textContent=`重音連続 ${chordSequenceIndex+1}/${total} — Checkで束ごとに判定し、緑/赤を付けて次へ`;
+    fb.textContent=`重音連続 ${chordSequenceIndex+1}/${total} — 必要音数を選ぶと自動判定して次へ`;
     fb.className='feedback-bar wait';
   }
 }
@@ -2928,7 +2935,7 @@ function selectNote(n,displayLabel=n){
       const nextBtn=document.getElementById('next-btn');
       if(shouldAutoMoveNext()){
         nextBtn.style.display='none';
-        autoTimer=setTimeout(()=>{ if(answered&&reviewingIdx===null&&!document.getElementById('result-modal-backdrop')?.classList.contains('show')) nextQuestion(); },timeAttackActive?450:1500);
+        scheduleNextQuestionAfterAnswer(timeAttackActive?450:1500);
       }else{
         nextBtn.style.display='block';
       }
@@ -2972,7 +2979,7 @@ function selectNote(n,displayLabel=n){
   const nextBtn=document.getElementById('next-btn');
   if(shouldAutoMoveNext()){
     nextBtn.style.display='none';
-    autoTimer=setTimeout(()=>{ if(answered&&reviewingIdx===null&&!document.getElementById('result-modal-backdrop')?.classList.contains('show')) nextQuestion(); },timeAttackActive?450:1200);
+    scheduleNextQuestionAfterAnswer(timeAttackActive?450:1200);
   } else {
     nextBtn.style.display='block';
   }
@@ -3649,6 +3656,15 @@ function formatRemain(sec){
 
 function shouldAutoMoveNext(){
   return autoAdvance || timeAttackActive;
+}
+
+function scheduleNextQuestionAfterAnswer(delay){
+  clearTimeout(autoTimer);
+  const modal=document.getElementById('result-modal-backdrop');
+  autoTimer=setTimeout(()=>{
+    const modalOpen=modal&&modal.classList.contains('show');
+    if(!modalOpen) nextQuestion();
+  }, delay);
 }
 
 function timeAttackQuestionsPerMinute(record){
