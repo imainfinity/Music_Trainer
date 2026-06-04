@@ -969,7 +969,7 @@ input[type="range"]{accent-color:#7DB7FF;}
   <div class="chord-check-dock" id="chord-check-dock">
     <div class="chord-check-dock-row">
       <div class="chord-check-status" id="chord-check-status">重音 選択: 0 / 2</div>
-      <button class="chord-check-btn" id="main-chord-check-btn" onclick="submitChordAnswer()">ここで答え合わせ / Check</button>
+      <button class="chord-check-btn" id="main-chord-check-btn" onclick="submitChordAnswer()" ontouchstart="event.preventDefault();submitChordAnswer();" onpointerup="submitChordAnswer();">ここで答え合わせ / Check</button>
       <button class="chord-undo-btn" onclick="undoLastChordPitch()">最後の音を消す</button>
       <button class="chord-undo-btn" onclick="prevChordSeqReview()">前の束</button>
       <button class="chord-undo-btn" onclick="nextChordSeqReview()">次の束</button>
@@ -1123,6 +1123,7 @@ let chordSequenceIndex=0;
 let chordSequenceResults=[];
 let chordSequenceSelections=[];
 let chordSequenceReviewIndex=0;
+let lastChordSubmitAt=0;
 let fiveFingerMode=true;
 let sequenceLength=5;
 let currentSequenceTargetLength=5;
@@ -2181,6 +2182,10 @@ function toggleChordSelection(n){
 }
 
 function submitChordAnswer(){
+  const now=Date.now();
+  if(now-lastChordSubmitAt<220) return;
+  lastChordSubmitAt=now;
+
   if(!(questionMode==='chord'||questionMode==='chordseq')||answered||!currentChord) return;
 
   const fb=document.getElementById('feedback');
@@ -3696,11 +3701,32 @@ function initApp(){
   initMobilePracticeMode();
   const mainCheckBtn=document.getElementById('main-chord-check-btn');
   if(mainCheckBtn){
-    mainCheckBtn.addEventListener('touchend',e=>{
+    ['touchstart','touchend','pointerup','click'].forEach(type=>{
+      mainCheckBtn.addEventListener(type,e=>{
+        e.preventDefault();
+        submitChordAnswer();
+      },{passive:false});
+    });
+  }
+
+  // Capture fallback: even if mobile WebView swallows the normal click,
+  // any tap on a chord-check button is routed here.
+  document.addEventListener('touchstart',e=>{
+    const btn=e.target&&e.target.closest?e.target.closest('.chord-check-btn'):null;
+    if(btn){
       e.preventDefault();
       submitChordAnswer();
-    },{passive:false});
-  }
+    }
+  },{capture:true,passive:false});
+
+  document.addEventListener('pointerup',e=>{
+    const btn=e.target&&e.target.closest?e.target.closest('.chord-check-btn'):null;
+    if(btn){
+      e.preventDefault();
+      submitChordAnswer();
+    }
+  },{capture:true,passive:false});
+
   nextQuestion();
   updateKeyTip();
   newRhythm();
