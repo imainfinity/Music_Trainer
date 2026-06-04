@@ -382,6 +382,22 @@ svg.staff{height:190px;filter:drop-shadow(0 10px 20px rgba(0,0,0,.08));}
 .keyboard-mode-bar.compact .keyboard-mode-label{font-size:10px;}
 .keyboard-mode-bar.compact .keyboard-mode-btn{padding:8px 10px;}
 .keyboard-wrap.mobile-lift{margin-top:6px;padding-top:10px;}
+.keyboard-scroll-rail{margin:0 0 10px;height:30px;border-radius:999px;background:linear-gradient(180deg,rgba(255,255,255,.10),rgba(255,255,255,.055));border:1px solid rgba(255,255,255,.10);position:relative;overflow:hidden;touch-action:none;cursor:grab;}
+.keyboard-scroll-rail:active{cursor:grabbing;}
+.keyboard-scroll-thumb{position:absolute;top:5px;left:6px;height:18px;width:84px;border-radius:999px;background:linear-gradient(135deg,rgba(125,183,255,.85),rgba(125,93,255,.85));box-shadow:0 8px 22px rgba(71,119,255,.22);}
+.challenge-panel{margin:0 0 14px;padding:12px;border-radius:18px;background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.09);}
+.challenge-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;}
+.challenge-left,.challenge-right{display:flex;flex-wrap:wrap;gap:7px;align-items:center;}
+.challenge-btn{border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.08);color:rgba(246,241,231,.76);border-radius:999px;padding:7px 11px;font-size:11px;font-family:var(--mono);cursor:pointer;}
+.challenge-btn.active,.challenge-btn.primary{background:linear-gradient(135deg,#4777FF,#7D5DFF);color:#fff;border-color:rgba(255,255,255,.24);}
+.challenge-status{font-size:11px;font-family:var(--mono);color:rgba(246,241,231,.66);}
+.challenge-log{display:none;margin-top:10px;max-height:140px;overflow:auto;border-top:1px solid rgba(255,255,255,.08);padding-top:8px;}
+.challenge-log.show{display:block;}
+.challenge-log-item{display:flex;justify-content:space-between;gap:8px;padding:6px 0;font-size:11px;font-family:var(--mono);color:rgba(246,241,231,.72);border-bottom:1px solid rgba(255,255,255,.055);}
+.sequence-progress{font-size:11px;font-family:var(--mono);color:rgba(246,241,231,.62);margin:-5px 0 10px;text-align:right;}
+.weakpoint-line{font-size:11px;font-family:var(--mono);color:rgba(255,210,145,.82);margin-top:6px;}
+
+
 @media (max-width:720px){
   .page{padding-bottom:20px;}
   .feedback-bar.compact-hide{display:none!important;}
@@ -593,6 +609,7 @@ input[type="range"]{accent-color:#7DB7FF;}
 
   <div class="settings-bar" style="margin-bottom:.75rem;">
     <div class="stab active" id="qtab-single" onclick="setQuestionMode('single',this)">単音モード</div>
+    <div class="stab" id="qtab-sequence" onclick="setQuestionMode('sequence',this)">連続読み / 4-5 Notes</div>
     <div class="stab" id="qtab-chord" onclick="setQuestionMode('chord',this)">重音 / Chord</div>
   </div>
 
@@ -628,6 +645,25 @@ input[type="range"]{accent-color:#7DB7FF;}
     </div>
     <div class="chord-info" id="chord-info">この設問の答え合わせコマンドです。鍵盤でオクターブ込み選択し、Checkしてください。Large Spreadでは大きく開いた譜面型も出します。</div>
     <div class="chord-pitch-row" id="chord-pitch-row"></div>
+  </div>
+
+  <div class="challenge-panel">
+    <div class="challenge-row">
+      <div class="challenge-left">
+        <button class="challenge-btn" id="log-toggle-btn" onclick="toggleDailyLogging()">LOG OFF</button>
+        <button class="challenge-btn active" id="finger-toggle-btn" onclick="toggleFiveFingerMode()">5-FINGER ON</button>
+        <button class="challenge-btn" onclick="startChallengeTimer(60)">60s</button>
+        <button class="challenge-btn" onclick="startChallengeTimer(180)">3min</button>
+        <button class="challenge-btn" onclick="startChallengeTimer(300)">5min</button>
+        <button class="challenge-btn" onclick="stopChallengeTimer()">STOP</button>
+      </div>
+      <div class="challenge-right">
+        <span class="challenge-status" id="challenge-status">LOG OFF / Timer ready</span>
+        <button class="challenge-btn" onclick="toggleLogView()">LOG</button>
+        <button class="challenge-btn" onclick="saveDailyLogManual()">SAVE</button>
+      </div>
+    </div>
+    <div class="challenge-log" id="challenge-log"></div>
   </div>
 
 
@@ -669,6 +705,9 @@ input[type="range"]{accent-color:#7DB7FF;}
   </div>
   <div class="keyboard-wrap mobile-lift" id="keyboard-wrap">
     <div id="keyboard-html" style="position:relative;height:88px;user-select:none;"></div>
+  </div>
+  <div class="keyboard-scroll-rail" id="keyboard-scroll-rail" aria-label="Keyboard scroll rail">
+    <div class="keyboard-scroll-thumb" id="keyboard-scroll-thumb"></div>
   </div>
 
   <button class="skip-btn" onclick="nextQuestion()">スキップ / Skip →</button>
@@ -781,7 +820,17 @@ let autoTimer=null;
 let history=[];
 let keyTipMode=false;
 let keyboardAutoPosition=true;
+let keyboardAutoPositionPending=true;
+let challengeLogging=false;
+let challengeTimer=null;
+let challengeEndAt=0;
+let challengeStartStats=null;
+let challengeDurationSec=0;
 let questionMode='single';
+let currentSequence=[];
+let sequenceIndex=0;
+let sequenceResults=[];
+let fiveFingerMode=true;
 let chordSize=2;
 let currentChord=null;
 let chordSelection=new Set();
@@ -1715,6 +1764,103 @@ function clampChordNote(note,clef){
   return out;
 }
 
+
+function toggleFiveFingerMode(){
+  fiveFingerMode=!fiveFingerMode;
+  localStorage.setItem('musicTrainerFiveFingerMode',fiveFingerMode?'1':'0');
+  const btn=document.getElementById('finger-toggle-btn');
+  if(btn){
+    btn.textContent=fiveFingerMode?'5-FINGER ON':'5-FINGER OFF';
+    btn.classList.toggle('active',fiveFingerMode);
+  }
+  if(questionMode==='sequence') nextQuestion();
+}
+
+function initFiveFingerMode(){
+  const saved=localStorage.getItem('musicTrainerFiveFingerMode');
+  if(saved!==null) fiveFingerMode=saved==='1';
+  const btn=document.getElementById('finger-toggle-btn');
+  if(btn){
+    btn.textContent=fiveFingerMode?'5-FINGER ON':'5-FINGER OFF';
+    btn.classList.toggle('active',fiveFingerMode);
+  }
+}
+
+function diatonicStep(note){
+  const order=['C','D','E','F','G','A','B'];
+  return note.o*7+order.indexOf(note.n);
+}
+
+function generateSequenceQuestion(){
+  const pool=(currentClef==='treble'?TREBLE_POOL:BASS_POOL)
+    .slice()
+    .sort((a,b)=>diatonicStep(a)-diatonicStep(b));
+  const len=Math.random()<0.55?4:5;
+
+  if(fiveFingerMode){
+    const candidates=[];
+    for(let i=0;i<pool.length;i++){
+      const group=pool.filter(n=>Math.abs(diatonicStep(n)-diatonicStep(pool[i]))<=4);
+      if(group.length>=len) candidates.push(group);
+    }
+    const group=candidates.length?candidates[Math.floor(Math.random()*candidates.length)]:pool;
+    const start=Math.max(0,Math.floor(Math.random()*Math.max(1,group.length-len+1)));
+    const base=group.slice(start,start+len);
+    // Shuffle order lightly so the learner must read contour, not just scale order.
+    const seq=[];
+    let last=base[Math.floor(Math.random()*base.length)];
+    for(let i=0;i<len;i++){
+      const options=base.filter(n=>!last||Math.abs(diatonicStep(n)-diatonicStep(last))<=4);
+      last=options[Math.floor(Math.random()*options.length)];
+      seq.push({...last});
+    }
+    return seq;
+  }
+
+  const seq=[];
+  let last=pool[Math.floor(Math.random()*pool.length)];
+  for(let i=0;i<len;i++){
+    const options=pool.filter(n=>Math.abs(diatonicStep(n)-diatonicStep(last))<=6);
+    last=options[Math.floor(Math.random()*options.length)];
+    seq.push({...last});
+  }
+  return seq;
+}
+
+function sequenceCurrentNote(){
+  return currentSequence[sequenceIndex]||currentSequence[currentSequence.length-1]||currentNote;
+}
+
+function updateSequenceFeedback(){
+  const fb=document.getElementById('feedback');
+  if(questionMode!=='sequence'||!fb) return;
+  const done=sequenceIndex;
+  const total=currentSequence.length;
+  const modeText=fiveFingerMode?'5本範囲':'広め';
+  fb.textContent=`連続読み ${done+1}/${total} — ${modeText} / 左から順に読む`;
+  fb.className='feedback-bar wait';
+}
+
+function recordWeakPoint(expected,answeredName,correct,mode){
+  const key='musicTrainerWeakPoints';
+  let data={};
+  try{data=JSON.parse(localStorage.getItem(key)||'{}');}catch(e){data={};}
+  const label=`${mode}|${selectedKeySig.label}|${currentClef}|${expected.n}`;
+  if(!data[label]) data[label]={mode,key:selectedKeySig.label,clef:currentClef,note:expected.n,total:0,wrong:0};
+  data[label].total++;
+  if(!correct) data[label].wrong++;
+  localStorage.setItem(key,JSON.stringify(data));
+}
+
+function getWeakPointSummary(){
+  let data={};
+  try{data=JSON.parse(localStorage.getItem('musicTrainerWeakPoints')||'{}');}catch(e){data={};}
+  const arr=Object.values(data).filter(x=>x.total>=2).sort((a,b)=>(b.wrong/b.total)-(a.wrong/a.total)||b.wrong-a.wrong);
+  if(!arr.length) return 'Weak point: データ蓄積中';
+  const x=arr[0];
+  return `Weak point: ${x.key} / ${x.clef} / ${x.note} wrong ${x.wrong}/${x.total}`;
+}
+
 function nextQuestion(){
   clearTimeout(autoTimer);
   reviewingIdx=null;
@@ -1724,6 +1870,9 @@ function nextQuestion(){
   chordPitchOrder=[];
   lastKeyboardPitch=null;
   currentChord=null;
+  currentSequence=[];
+  sequenceIndex=0;
+  sequenceResults=[];
   document.getElementById('next-btn').style.display='none';
   if(clefMode==='treble') currentClef='treble';
   else if(clefMode==='bass') currentClef='bass';
@@ -1733,9 +1882,13 @@ function nextQuestion(){
   if(questionMode==='chord'){
     currentChord=generateChordQuestion();
     currentNote=currentChord.notes[0];
+  }else if(questionMode==='sequence'){
+    currentSequence=generateSequenceQuestion();
+    currentNote=currentSequence[0];
   }else{
     currentNote=pool[Math.floor(Math.random()*pool.length)];
   }
+  keyboardAutoPositionPending=true;
 
   document.querySelectorAll('.note-btn').forEach(b=>{
     b.classList.remove('correct','wrong','selected');
@@ -1743,20 +1896,69 @@ function nextQuestion(){
     b.querySelector('.jp').textContent=NOTE_JP[en];
   });
   const fb=document.getElementById('feedback');
-  fb.textContent=questionMode==='chord'
-    ? ''
-    : '音名ボタンまたは鍵盤をタップ';
-  fb.className=questionMode==='chord'?'feedback-bar wait compact-hide':'feedback-bar wait';
+  if(questionMode==='chord'){
+    fb.textContent='';
+    fb.className='feedback-bar wait compact-hide';
+  }else if(questionMode==='sequence'){
+    fb.textContent=`連続読み 1/${currentSequence.length} — ${fiveFingerMode?'5本範囲':'広め'} / 左から順に読む`;
+    fb.className='feedback-bar wait';
+  }else{
+    fb.textContent='音名ボタンまたは鍵盤をタップ';
+    fb.className='feedback-bar wait';
+  }
   renderStaff();
   renderKeyboard(null);
   const clefJP=currentClef==='treble'?'ト音記号':'ヘ音記号';
-  document.getElementById('clef-label').textContent=(currentClef==='treble'?'TREBLE CLEF':'BASS CLEF')+' — '+clefJP+(questionMode==='chord'?' / CHORD':'');
+  document.getElementById('clef-label').textContent=(currentClef==='treble'?'TREBLE CLEF':'BASS CLEF')+' — '+clefJP+(questionMode==='chord'?' / CHORD':(questionMode==='sequence'?' / SEQUENCE':''));
   updateKeyTip();
   updateChordPanel();
 }
 
 function selectNote(n,displayLabel=n){
   if(questionMode==='chord'){
+    return;
+  }
+  if(questionMode==='sequence'){
+    if(answered) return;
+    const expected=sequenceCurrentNote();
+    const correct=n===expected.n;
+    sequenceResults[sequenceIndex]={correct,answered:n,answeredLabel:displayLabel,expected};
+    stats.total++;
+    if(correct){stats.correct++;stats.streak++;}else{stats.streak=0;}
+    recordWeakPoint(expected,n,correct,'sequence');
+
+    document.querySelectorAll('.note-btn').forEach(b=>{
+      const en=b.querySelector('.en').textContent;
+      b.classList.remove('correct','wrong','selected');
+      if(en===n&&!correct) b.classList.add('wrong');
+      if(en===expected.n) b.classList.add('correct');
+    });
+
+    sequenceIndex++;
+    currentNote=sequenceCurrentNote();
+    renderStaff();
+    renderKeyboard(correct?null:expected,(!correct&&lastKeyboardPitch)?[lastKeyboardPitch]:[]);
+    updateStats();
+
+    if(sequenceIndex>=currentSequence.length){
+      answered=true;
+      const ok=sequenceResults.filter(r=>r&&r.correct).length;
+      const fb=document.getElementById('feedback');
+      fb.textContent=`${ok===currentSequence.length?'✓':'△'} 連続読み完了 ${ok}/${currentSequence.length} — ${currentSequence.map(pitchLabel).join('・')}`;
+      fb.className=ok===currentSequence.length?'feedback-bar ok':'feedback-bar ng';
+      history.unshift({sequence:true,note:'Seq',oct:'',jp:currentSequence.map(pitchLabel).join('・'),clef:currentClef,correct:ok===currentSequence.length,answered:sequenceResults.map(r=>r?r.answered:'?').join('・'),answeredLabel:sequenceResults.map(r=>r?r.answeredLabel:'?').join('・'),keySig:selectedKeySig,notes:currentSequence});
+      if(history.length>10) history.pop();
+      renderHistory();
+      const nextBtn=document.getElementById('next-btn');
+      if(autoAdvance){
+        nextBtn.style.display='none';
+        autoTimer=setTimeout(()=>{ if(answered&&reviewingIdx===null) nextQuestion(); },1500);
+      }else{
+        nextBtn.style.display='block';
+      }
+    }else{
+      updateSequenceFeedback();
+    }
     return;
   }
   if(answered) return;
@@ -1809,7 +2011,8 @@ function reviewHistory(i){
     reviewingIdx=null;
     renderHistory();
     renderStaff();
-    renderKeyboard(answered?currentNote:null);
+    keyboardAutoPositionPending=keyboardAutoPosition;
+  renderKeyboard(answered?currentNote:null);
     const fb=document.getElementById('feedback');
     if(!answered){ fb.textContent='音名ボタンまたは鍵盤をタップ'; fb.className='feedback-bar wait'; }
     document.getElementById('clef-label').textContent=
@@ -1837,7 +2040,7 @@ function reviewHistory(i){
   document.getElementById('clef-label').textContent=
     (h.clef==='treble'?'TREBLE CLEF':'BASS CLEF')+' — '+(h.clef==='treble'?'ト音記号':'ヘ音記号')+' 【履歴 '+(i+1)+'】';
   renderStaff();
-  renderKeyboard(h.chord?h.notes:{n:h.note,o:h.oct},h.wrongNotes||[]);
+  renderKeyboard(h.sequence?h.notes:(h.chord?h.notes:{n:h.note,o:h.oct}),h.wrongNotes||[]);
 
   const fb=document.getElementById('feedback');
   if(h.correct){
@@ -1941,6 +2144,7 @@ function updateStats(){
   document.getElementById('s-total').textContent=stats.total;
   document.getElementById('s-streak').textContent=stats.streak;
   document.getElementById('s-acc').textContent=stats.total>0?Math.round(stats.correct/stats.total*100)+'%':'—';
+  updateChallengeStatus();
 }
 
 // ---- Staff rendering ----
@@ -1956,7 +2160,7 @@ function renderStaff(){
   const bottomLine=topLineY+4*ls;
 
   function finishViewBox(extraTop,extraBottom){
-    const notesToMeasure=(questionMode==='chord'&&currentChord)?currentChord.notes:[currentNote];
+    const notesToMeasure=questionMode==='sequence'&&currentSequence.length?currentSequence:((questionMode==='chord'&&currentChord)?currentChord.notes:[currentNote]);
     const ys=notesToMeasure.map(n=>getNoteY(n,currentClef,topLineY,ls));
     const minY=Math.min(...ys), maxY=Math.max(...ys);
     const contentTop=Math.min(topLineY-20,minY-34, currentClef==='treble'?6:10)-extraTop;
@@ -2029,7 +2233,7 @@ function renderStaff(){
     });
   }
 
-  const notesToDraw=(questionMode==='chord'&&currentChord)?currentChord.notes:[currentNote];
+  const notesToDraw=questionMode==='sequence'&&currentSequence.length?currentSequence:((questionMode==='chord'&&currentChord)?currentChord.notes:[currentNote]);
 
   function drawLedgerLinesFor(noteY,xCenter){
     const lw=34;
@@ -2050,10 +2254,10 @@ function renderStaff(){
     }
   }
 
-  function drawNoteHead(x,y){
+  function drawNoteHead(x,y,color=nc,strokeColor='#204978'){
     const head=el('ellipse',{
       cx:x,cy:y,rx:10.6,ry:8.1,
-      fill:nc,stroke:'#204978','stroke-width':1.25,
+      fill:color,stroke:strokeColor,'stroke-width':1.25,
       transform:`rotate(-18 ${x} ${y})`
     },svg);
     const shine=el('ellipse',{
@@ -2069,23 +2273,48 @@ function renderStaff(){
     const noteY=getNoteY(note,currentClef,topLineY,ls);
     const prevY=idx>0?getNoteY(notesToDraw[idx-1],currentClef,topLineY,ls):null;
     const needsSideOffset=questionMode==='chord'&&prevY!==null&&Math.abs(prevY-noteY)<=6;
+    const seqX=questionMode==='sequence' ? (190 + idx*58) : noteX;
     const xOffset=needsSideOffset?12:0;
-    const x=noteX+xOffset;
-    placed.push({x,y:noteY});
+    const x=seqX+xOffset;
+    placed.push({x,y:noteY,note,idx});
     drawLedgerLinesFor(noteY,x);
-    drawNoteHead(x,noteY);
+    let color=nc, strokeColor='#204978';
+    if(questionMode==='sequence'){
+      if(idx<sequenceIndex){
+        color=sequenceResults[idx]&&sequenceResults[idx].correct?'#23A45A':'#C43B4B';
+        strokeColor=color;
+      }else if(idx===sequenceIndex){
+        color='#2D5FA3';
+        strokeColor='#102F62';
+        el('circle',{cx:x,cy:noteY,r:17,fill:'none',stroke:'rgba(45,95,163,.25)','stroke-width':2},svg);
+      }else{
+        color='#7C8AA0';
+        strokeColor='#657184';
+      }
+    }
+    drawNoteHead(x,noteY,color,strokeColor);
   });
 
   if(notesToDraw.length>0){
-    const ys=placed.map(p=>p.y);
-    const avgY=ys.reduce((a,b)=>a+b,0)/ys.length;
-    const minY=Math.min(...ys), maxY=Math.max(...ys);
-    const midLineY=topLineY+2*ls;
-    const stemUp=avgY>midLineY;
-    const sx=stemUp?(placed[0].x+13):(placed[0].x-10);
-    const y1=stemUp?maxY:minY;
-    const y2=stemUp?(minY-40):(maxY+40);
-    el('line',{x1:sx,x2:sx,y1:y1,y2:y2,stroke:nc,'stroke-width':2.3,'stroke-linecap':'round'},svg);
+    if(questionMode==='sequence'){
+      placed.forEach(p=>{
+        const midLineY=topLineY+2*ls;
+        const stemUp=p.y>midLineY;
+        const sx=stemUp?(p.x+13):(p.x-10);
+        const y2=stemUp?(p.y-36):(p.y+36);
+        el('line',{x1:sx,x2:sx,y1:p.y,y2:y2,stroke:(p.idx<sequenceIndex?(sequenceResults[p.idx]&&sequenceResults[p.idx].correct?'#23A45A':'#C43B4B'):nc),'stroke-width':2.1,'stroke-linecap':'round'},svg);
+      });
+    }else{
+      const ys=placed.map(p=>p.y);
+      const avgY=ys.reduce((a,b)=>a+b,0)/ys.length;
+      const minY=Math.min(...ys), maxY=Math.max(...ys);
+      const midLineY=topLineY+2*ls;
+      const stemUp=avgY>midLineY;
+      const sx=stemUp?(placed[0].x+13):(placed[0].x-10);
+      const y1=stemUp?maxY:minY;
+      const y2=stemUp?(minY-40):(maxY+40);
+      el('line',{x1:sx,x2:sx,y1:y1,y2:y2,stroke:nc,'stroke-width':2.3,'stroke-linecap':'round'},svg);
+    }
   }
 
   finishViewBox(0,0);
@@ -2121,7 +2350,7 @@ function renderKeyboard(answerNote,wrongNote=[]){
   const ks=selectedKeySig;
   const answerNotes=Array.isArray(answerNote)?answerNote:(answerNote?[answerNote]:[]);
   const wrongNotes=Array.isArray(wrongNote)?wrongNote:(wrongNote?[wrongNote]:[]);
-  const targetNotes=(questionMode==='chord'&&currentChord)?currentChord.notes:(currentNote?[currentNote]:[]);
+  const targetNotes=questionMode==='sequence'&&currentSequence.length?[sequenceCurrentNote()]:((questionMode==='chord'&&currentChord)?currentChord.notes:(currentNote?[currentNote]:[]));
   const selectedNotes=questionMode==='chord'
     ? [...chordPitchSelection].map(parsePitchKey).filter(Boolean)
     : (lastKeyboardPitch?[lastKeyboardPitch]:[]);
@@ -2260,7 +2489,7 @@ function renderKeyboard(answerNote,wrongNote=[]){
     const maxRight=Math.max(...rights);
     const center=(minLeft+maxRight)/2;
     wrapEl.scrollLeft=center - wrapEl.clientWidth/2;
-  }else if(keyboardAutoPosition){
+  }else if(keyboardAutoPosition&&keyboardAutoPositionPending){
     const moveTo=answerDiv||targetDiv;
     if(moveTo){
       const keyLeft=parseInt(moveTo.style.left)||0;
@@ -2272,9 +2501,125 @@ function renderKeyboard(answerNote,wrongNote=[]){
       const px=(octaves.indexOf(preferredOct)*7)*WW;
       wrapEl.scrollLeft=px - wrapEl.clientWidth/2 + WW*3;
     }
+    keyboardAutoPositionPending=false;
   } else {
     wrapEl.scrollLeft=keepScroll;
   }
+  updateKeyboardScrollRail();
+}
+
+
+function todayKey(){
+  const d=new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function getDailyLogs(){try{return JSON.parse(localStorage.getItem('musicTrainerDailyLogs')||'[]');}catch(e){return [];}}
+function setDailyLogs(logs){localStorage.setItem('musicTrainerDailyLogs',JSON.stringify(logs.slice(0,365)));}
+function updateChallengeStatus(){
+  const el=document.getElementById('challenge-status');
+  const btn=document.getElementById('log-toggle-btn');
+  if(btn){btn.textContent=challengeLogging?'LOG ON':'LOG OFF';btn.classList.toggle('active',challengeLogging);}
+  if(!el) return;
+  let timerText='Timer ready';
+  if(challengeEndAt){
+    const remain=Math.max(0,Math.ceil((challengeEndAt-Date.now())/1000));
+    timerText=`${remain}s`;
+  }
+  const acc=stats.total?Math.round(stats.correct/stats.total*100):0;
+  el.textContent=`${challengeLogging?'LOG ON':'LOG OFF'} / ${timerText} / ${stats.correct}/${stats.total} ${stats.total?acc+'%':'—'}`;
+}
+function toggleDailyLogging(){
+  challengeLogging=!challengeLogging;
+  localStorage.setItem('musicTrainerLoggingEnabled',challengeLogging?'1':'0');
+  updateChallengeStatus();
+}
+function startChallengeTimer(sec){
+  challengeDurationSec=sec;
+  challengeEndAt=Date.now()+sec*1000;
+  challengeStartStats={correct:stats.correct,total:stats.total,streak:stats.streak,startedAt:new Date().toISOString()};
+  clearInterval(challengeTimer);
+  challengeTimer=setInterval(()=>{updateChallengeStatus();if(Date.now()>=challengeEndAt)finishChallengeTimer();},250);
+  updateChallengeStatus();
+}
+function stopChallengeTimer(){
+  clearInterval(challengeTimer);
+  challengeTimer=null;challengeEndAt=0;challengeStartStats=null;
+  updateChallengeStatus();
+}
+function finishChallengeTimer(){
+  clearInterval(challengeTimer);
+  challengeTimer=null;
+  const start=challengeStartStats||{correct:0,total:0,startedAt:new Date().toISOString()};
+  const deltaTotal=Math.max(0,stats.total-start.total);
+  const deltaCorrect=Math.max(0,stats.correct-start.correct);
+  const record={date:todayKey(),endedAt:new Date().toISOString(),durationSec:challengeDurationSec,mode:questionMode,clefMode,key:selectedKeySig.label,correct:deltaCorrect,total:deltaTotal,accuracy:deltaTotal?Math.round(deltaCorrect/deltaTotal*100):0};
+  if(challengeLogging) saveDailyRecord(record);
+  challengeEndAt=0;challengeStartStats=null;
+  updateChallengeStatus();renderDailyLog();
+}
+function saveDailyRecord(record){
+  const logs=getDailyLogs();
+  const idx=logs.findIndex(x=>x.date===record.date&&x.mode===record.mode&&x.key===record.key&&x.clefMode===record.clefMode);
+  if(idx>=0){
+    logs[idx].sessions=(logs[idx].sessions||1)+1;
+    logs[idx].correct=(logs[idx].correct||0)+(record.correct||0);
+    logs[idx].total=(logs[idx].total||0)+(record.total||0);
+    logs[idx].accuracy=logs[idx].total?Math.round(logs[idx].correct/logs[idx].total*100):0;
+    logs[idx].endedAt=record.endedAt;
+    logs[idx].durationSec=(logs[idx].durationSec||0)+(record.durationSec||0);
+  }else{
+    record.sessions=1;
+    logs.unshift(record);
+  }
+  setDailyLogs(logs);
+}
+function saveDailyLogManual(){
+  const record={date:todayKey(),endedAt:new Date().toISOString(),durationSec:0,mode:questionMode,clefMode,key:selectedKeySig.label,correct:stats.correct,total:stats.total,accuracy:stats.total?Math.round(stats.correct/stats.total*100):0};
+  saveDailyRecord(record);renderDailyLog(true);updateChallengeStatus();
+}
+function toggleLogView(){const box=document.getElementById('challenge-log');if(!box)return;box.classList.toggle('show');renderDailyLog();}
+function renderDailyLog(forceShow=false){
+  const box=document.getElementById('challenge-log');if(!box)return;
+  if(forceShow) box.classList.add('show');
+  const logs=getDailyLogs();
+  if(logs.length===0){box.innerHTML='<div class="challenge-log-item"><span>No logs yet</span><span>—</span></div>';return;}
+  box.innerHTML=logs.slice(0,12).map(r=>{
+    const time=new Date(r.endedAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    const dur=r.durationSec?`${r.durationSec}s`:'manual';
+    return `<div class="challenge-log-item"><span>${r.date} ${time} / ${r.mode} / ${dur} / ${r.sessions||1}x</span><span>${r.correct}/${r.total} ${r.total?r.accuracy+'%':'—'}</span></div>`;
+  }).join('')+`<div class="weakpoint-line">${getWeakPointSummary()}</div>`;
+}
+function initChallengeLog(){
+  challengeLogging=localStorage.getItem('musicTrainerLoggingEnabled')==='1';
+  updateChallengeStatus();renderDailyLog();
+}
+function updateKeyboardScrollRail(){
+  const wrap=document.getElementById('keyboard-wrap'),rail=document.getElementById('keyboard-scroll-rail'),thumb=document.getElementById('keyboard-scroll-thumb');
+  if(!wrap||!rail||!thumb) return;
+  const maxScroll=Math.max(1,wrap.scrollWidth-wrap.clientWidth);
+  const railW=Math.max(1,rail.clientWidth-12);
+  const thumbW=Math.max(50,Math.min(160,railW*(wrap.clientWidth/Math.max(wrap.scrollWidth,1))));
+  const maxLeft=Math.max(0,railW-thumbW);
+  thumb.style.width=thumbW+'px';
+  thumb.style.left=((wrap.scrollLeft/maxScroll)*maxLeft+6)+'px';
+}
+function initKeyboardScrollRail(){
+  const wrap=document.getElementById('keyboard-wrap'),rail=document.getElementById('keyboard-scroll-rail');
+  if(!wrap||!rail) return;
+  let dragging=false,startX=0,startScroll=0;
+  const getX=e=>(e.touches&&e.touches[0]?e.touches[0].clientX:e.clientX);
+  const begin=e=>{dragging=true;startX=getX(e);startScroll=wrap.scrollLeft;e.preventDefault();};
+  const move=e=>{if(!dragging)return;const dx=getX(e)-startX;const maxScroll=Math.max(1,wrap.scrollWidth-wrap.clientWidth);const railW=Math.max(1,rail.clientWidth);wrap.scrollLeft=startScroll+dx*(maxScroll/railW);updateKeyboardScrollRail();e.preventDefault();};
+  const end=()=>{dragging=false;};
+  rail.addEventListener('mousedown',begin);
+  rail.addEventListener('touchstart',begin,{passive:false});
+  window.addEventListener('mousemove',move,{passive:false});
+  window.addEventListener('touchmove',move,{passive:false});
+  window.addEventListener('mouseup',end);
+  window.addEventListener('touchend',end);
+  wrap.addEventListener('scroll',updateKeyboardScrollRail);
+  window.addEventListener('resize',updateKeyboardScrollRail);
+  updateKeyboardScrollRail();
 }
 
 // ==================== RHYTHM ====================
@@ -2411,10 +2756,14 @@ document.addEventListener('keydown',e=>{
 
 // INIT
 buildKeySigUI();
+initFiveFingerMode();
+initChallengeLog();
+initKeyboardScrollRail();
 nextQuestion();
 updateKeyTip();
 newRhythm();
 renderHistory();
+updateKeyboardScrollRail();
 </script>
 </body>
 </html>
