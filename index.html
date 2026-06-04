@@ -969,7 +969,7 @@ input[type="range"]{accent-color:#7DB7FF;}
   <div class="chord-check-dock" id="chord-check-dock">
     <div class="chord-check-dock-row">
       <div class="chord-check-status" id="chord-check-status">重音 選択: 0 / 2</div>
-      <button class="chord-check-btn" onclick="submitChordAnswer()">ここで答え合わせ / Check</button>
+      <button class="chord-check-btn" id="main-chord-check-btn" onclick="submitChordAnswer()">ここで答え合わせ / Check</button>
       <button class="chord-undo-btn" onclick="undoLastChordPitch()">最後の音を消す</button>
       <button class="chord-undo-btn" onclick="prevChordSeqReview()">前の束</button>
       <button class="chord-undo-btn" onclick="nextChordSeqReview()">次の束</button>
@@ -2184,82 +2184,116 @@ function submitChordAnswer(){
   if(!(questionMode==='chord'||questionMode==='chordseq')||answered||!currentChord) return;
 
   const fb=document.getElementById('feedback');
-  fb.classList.remove('compact-hide');
+  if(fb) fb.classList.remove('compact-hide');
 
   if(questionMode==='chordseq'){
-    // Check each bundle as you proceed. Completed bundles stay green/red on the staff.
-    storeCurrentChordSeqSelection();
-    const bundleResult=gradeChordSeqSelection(currentChord,chordSequenceSelections[chordSequenceIndex]||[]);
-    chordSequenceResults[chordSequenceIndex]=bundleResult;
+    try{
+      // Always store and grade the current bundle first.
+      const idx=chordSequenceIndex;
+      const seqLen=currentChordSequence.length || 1;
+      const saved=[...chordPitchSelection];
+      chordSequenceSelections[idx]=saved;
 
-    stats.total++;
-    if(bundleResult.correct){ stats.correct++; stats.streak++; }
-    else { stats.streak=0; }
-    currentChord.notes.forEach(n=>recordWeakPoint(n,(bundleResult.selected||[]).join('|'),bundleResult.correct,questionMode));
-    updateStats();
+      let bundleResult;
+      try{
+        bundleResult=gradeChordSeqSelection(currentChord,saved);
+      }catch(e){
+        console.error('gradeChordSeqSelection failed',e);
+        const correctSet=new Set((currentChord.notes||[]).map(pitchKey));
+        const correct=saved.length===correctSet.size && saved.every(k=>correctSet.has(k));
+        const wrongPitchNotes=saved.filter(k=>!correctSet.has(k)).map(parsePitchKey).filter(Boolean);
+        bundleResult={correct,selected:saved,wrongPitchNotes};
+      }
+      chordSequenceResults[idx]=bundleResult;
 
-    if(chordSequenceIndex < currentChordSequence.length-1){
-      const justCheckedIndex=chordSequenceIndex;
-      const wasCorrect=bundleResult.correct;
+      // Count this bundle once.
+      stats.total++;
+      if(bundleResult.correct){ stats.correct++; stats.streak++; }
+      else { stats.streak=0; }
+      try{
+        (currentChord.notes||[]).forEach(n=>recordWeakPoint(n,(bundleResult.selected||[]).join('|'),bundleResult.correct,questionMode));
+      }catch(e){ console.warn('weakpoint record skipped',e); }
+      updateStats();
 
-      // Move immediately to the next bundle.
-      // Previous bundle stays green/red on the staff; current bundle becomes blue.
-      chordSequenceIndex++;
-      currentChord=currentChordSequence[chordSequenceIndex];
-      currentNote=currentChord.notes[0];
-      currentChordSize=currentChord.notes.length;
+      // If there is a next bundle, advance immediately.
+      if(idx < seqLen-1){
+        const nextIdx=idx+1;
+        chordSequenceIndex=nextIdx;
+        currentChord=currentChordSequence[nextIdx];
+        currentNote=(currentChord.notes&&currentChord.notes[0])||currentNote;
+        currentChordSize=(currentChord.notes&&currentChord.notes.length)||currentChordSize;
+        chordPitchSelection.clear();
+        chordPitchOrder=[];
+        keyboardAutoPositionPending=true;
+
+        if(fb){
+          fb.textContent=`${bundleResult.correct?'✓':'✗'} 束 ${idx+1}/${seqLen} ${bundleResult.correct?'正解':'不正解'} → ${nextIdx+1}束目へ`;
+          fb.className=bundleResult.correct?'feedback-bar ok':'feedback-bar ng';
+        }
+
+        renderStaff();
+        renderKeyboard(null);
+        updateChordPanel();
+        updateChordCheckDock();
+        updateKeyboardScrollRail();
+        return;
+      }
+
+      // Last bundle: finish and enter review.
+      answered=true;
+      const ok=chordSequenceResults.filter(r=>r&&r.correct).length;
+
+      if(fb){
+        fb.textContent=`${ok===seqLen?'✓':'△'} 重音連続 完了 ${ok}/${seqLen} — 前/次の束で振り返り`;
+        fb.className=ok===seqLen?'feedback-bar ok':'feedback-bar ng';
+      }
+
+      history.unshift({
+        chordseq:true,
+        note:'ChordSeq',
+        oct:'',
+        jp:currentChordSequence.map(c=>c.notes.map(pitchLabel).join('+')).join(' / '),
+        clef:currentClef,
+        correct:ok===seqLen,
+        answered:chordSequenceResults.map(r=>r?r.selected.join('・'):'?').join(' / '),
+        answeredLabel:chordSequenceResults.map((r,idx)=>formatChordSelection(chordSequenceSelections[idx])).join(' / '),
+        keySig:selectedKeySig,
+        chordSequence:currentChordSequence,
+        notes:currentChordSequence.flatMap(c=>c.notes)
+      });
+      if(history.length>10) history.pop();
+      renderHistory();
+
       chordPitchSelection.clear();
       chordPitchOrder=[];
-      keyboardAutoPositionPending=true;
+      chordSequenceReviewIndex=0;
+      reviewChordSeqBundle(0);
 
-      fb.textContent=`${wasCorrect?'✓':'✗'} 束 ${justCheckedIndex+1}/${currentChordSequence.length} ${wasCorrect?'正解':'不正解'} → ${chordSequenceIndex+1}束目へ`;
-      fb.className=wasCorrect?'feedback-bar ok':'feedback-bar ng';
+      const nextBtn=document.getElementById('next-btn');
+      if(nextBtn) nextBtn.style.display=autoAdvance?'none':'block';
+      return;
 
-      renderStaff();
-      renderKeyboard(null);
-      updateChordPanel();
-      updateChordCheckDock();
-      updateChordSequenceFeedback();
+    }catch(err){
+      console.error('Chord sequence check failed hard:',err);
+      // Hard fallback: force advance so the UI never gets stuck.
+      if(chordSequenceIndex < currentChordSequence.length-1){
+        chordSequenceIndex++;
+        currentChord=currentChordSequence[chordSequenceIndex];
+        currentNote=(currentChord.notes&&currentChord.notes[0])||currentNote;
+        chordPitchSelection.clear();
+        chordPitchOrder=[];
+        renderStaff();
+        renderKeyboard(null);
+        updateChordPanel();
+        updateChordCheckDock();
+        return;
+      }
+      if(fb){
+        fb.textContent='処理エラーが出たため、この問題をスキップしてください';
+        fb.className='feedback-bar ng';
+      }
       return;
     }
-
-    renderStaff();
-    renderKeyboard(currentChord.notes,bundleResult.wrongPitchNotes||[]);
-
-    answered=true;
-    const ok=chordSequenceResults.filter(r=>r&&r.correct).length;
-
-    fb.textContent=`${ok===currentChordSequence.length?'✓':'△'} 重音連続 完了 ${ok}/${currentChordSequence.length} — 前/次の束で振り返り`;
-    fb.className=ok===currentChordSequence.length?'feedback-bar ok':'feedback-bar ng';
-
-    history.unshift({
-      chordseq:true,
-      note:'ChordSeq',
-      oct:'',
-      jp:currentChordSequence.map(c=>c.notes.map(pitchLabel).join('+')).join(' / '),
-      clef:currentClef,
-      correct:ok===currentChordSequence.length,
-      answered:chordSequenceResults.map(r=>r?r.selected.join('・'):'?').join(' / '),
-      answeredLabel:chordSequenceResults.map((r,idx)=>formatChordSelection(chordSequenceSelections[idx])).join(' / '),
-      keySig:selectedKeySig,
-      chordSequence:currentChordSequence,
-      notes:currentChordSequence.flatMap(c=>c.notes)
-    });
-
-    if(history.length>10) history.pop();
-    renderHistory();
-    chordPitchSelection.clear();
-    chordPitchOrder=[];
-    chordSequenceReviewIndex=0;
-    reviewChordSeqBundle(0);
-
-    const nextBtn=document.getElementById('next-btn');
-    if(autoAdvance){
-      nextBtn.style.display='none';
-    }else{
-      nextBtn.style.display='block';
-    }
-    return;
   }
 
   const correctSet=new Set(currentChord.notes.map(pitchKey));
@@ -3660,6 +3694,13 @@ function initApp(){
   initChallengeLog();
   initKeyboardScrollRail();
   initMobilePracticeMode();
+  const mainCheckBtn=document.getElementById('main-chord-check-btn');
+  if(mainCheckBtn){
+    mainCheckBtn.addEventListener('touchend',e=>{
+      e.preventDefault();
+      submitChordAnswer();
+    },{passive:false});
+  }
   nextQuestion();
   updateKeyTip();
   newRhythm();
