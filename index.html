@@ -1146,31 +1146,69 @@ function setChordVoicing(mode){
   if(questionMode==='chord') nextQuestion();
 }
 
-function pitchKey(note){
-  return note ? `${note.n}${note.o}` : '';
-}
-
-function parsePitchKey(key){
-  const m=String(key).match(/^([A-G])(\d+)$/);
-  return m?{n:m[1],o:parseInt(m[2],10)}:null;
-}
-
-function pitchLabel(note){
-  if(!note) return '';
-  const ks=selectedKeySig;
-  const blackFlatMap={D:'D♭',E:'E♭',G:'G♭',A:'A♭',B:'B♭'};
-  const blackSharpMap={C:'C#',D:'D#',F:'F#',G:'G#',A:'A#'};
-  if(ks.flats.includes(note.n) && blackFlatMap[note.n]) return `${blackFlatMap[note.n]}${note.o}`;
-  if(ks.sharps.includes(note.n) && blackSharpMap[note.n]) return `${blackSharpMap[note.n]}${note.o}`;
-  return `${note.n}${note.o}`;
+function naturalMidi(note){
+  const semis={C:0,D:2,E:4,F:5,G:7,A:9,B:11};
+  return (note.o+1)*12 + semis[note.n];
 }
 
 function noteToMidi(note){
+  if(note&&typeof note.midi==='number') return note.midi;
   const semis={C:0,D:2,E:4,F:5,G:7,A:9,B:11};
   let acc=0;
   if(selectedKeySig.sharps.includes(note.n)) acc=1;
   if(selectedKeySig.flats.includes(note.n)) acc=-1;
   return (note.o+1)*12 + semis[note.n] + acc;
+}
+
+function pitchKey(note){
+  if(!note) return '';
+  return `m${noteToMidi(note)}`;
+}
+
+function midiToKeyboardLabel(midi){
+  const names=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+  const pc=((midi%12)+12)%12;
+  const oct=Math.floor(midi/12)-1;
+  return `${names[pc]}${oct}`;
+}
+
+function midiToKeyboardNote(midi){
+  const names=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+  const pc=((midi%12)+12)%12;
+  const oct=Math.floor(midi/12)-1;
+  const name=names[pc];
+  return {n:name.charAt(0),o:oct,midi,physical:true,label:`${name}${oct}`};
+}
+
+function parsePitchKey(key){
+  const m=String(key).match(/^m(\d+)$/);
+  if(m) return midiToKeyboardNote(parseInt(m[1],10));
+
+  // Legacy fallback for old history records.
+  const p=String(key).match(/^([A-G])(\d+)$/);
+  return p?{n:p[1],o:parseInt(p[2],10)}:null;
+}
+
+function pitchLabel(note){
+  if(!note) return '';
+  if(note.physical&&note.label) return note.label;
+
+  const ks=selectedKeySig;
+  const raw=`${note.n}${note.o}`;
+  const midi=noteToMidi(note);
+  const physical=midiToKeyboardLabel(midi);
+
+  if(ks.flats.includes(note.n)){
+    const spelled=`${note.n}♭${note.o}`;
+    if(note.n==='C'||note.n==='F') return `${spelled}（${physical}）`;
+    return spelled;
+  }
+  if(ks.sharps.includes(note.n)){
+    const spelled=`${note.n}♯${note.o}`;
+    if(note.n==='B'||note.n==='E') return `${spelled}（${physical}）`;
+    return spelled;
+  }
+  return raw;
 }
 
 function chordSpanSemitones(notes){
@@ -1254,6 +1292,70 @@ function normalizePlayableChord(notes,clef){
 
   out.sort((a,b)=>noteToMidi(a)-noteToMidi(b));
   return out;
+}
+
+function staffStepValue(note,clef){
+  const order=['C','D','E','F','G','A','B'];
+  const idx=order.indexOf(note.n);
+  const ref=clef==='treble'
+    ? {o:4,idx:order.indexOf('E')}
+    : {o:2,idx:order.indexOf('G')};
+  return (note.o*7+idx)-(ref.o*7+ref.idx);
+}
+
+function closeChordStaffScore(notes,clef){
+  const steps=notes.map(n=>staffStepValue(n,clef));
+  const minS=Math.min(...steps), maxS=Math.max(...steps);
+  const center=(minS+maxS)/2;
+  const ideal=4; // middle of the five-line staff
+  let score=0;
+
+  // Prefer chords fully inside the staff first.
+  if(minS>=0 && maxS<=8) score+=100;
+
+  // Still allow just-near-staff chords, but score them lower.
+  if(minS>=-2 && maxS<=10) score+=30;
+
+  // Avoid the same top-heavy ledger-looking close shape over and over.
+  score-=Math.abs(center-ideal)*7;
+  score-=Math.max(0,-minS)*10;
+  score-=Math.max(0,maxS-8)*10;
+
+  // Keep the notes close, but not collapsed into a visually useless stack.
+  const span=chordSpanSemitones(notes);
+  score-=Math.max(0,span-12)*8;
+
+  return score;
+}
+
+function chooseCloseChordInsideStaff(notes,clef){
+  const candidates=[];
+  for(let shift=-3;shift<=3;shift++){
+    let cand=notes.map(n=>({n:n.n,o:n.o+shift}));
+    cand=normalizePlayableChord(cand,clef).sort((a,b)=>noteToMidi(a)-noteToMidi(b));
+
+    // De-duplicate by pitch keys.
+    const key=cand.map(pitchKey).join(',');
+    if(candidates.some(c=>c.key===key)) continue;
+
+    const steps=cand.map(n=>staffStepValue(n,clef));
+    const minS=Math.min(...steps), maxS=Math.max(...steps);
+    candidates.push({
+      key,
+      notes:cand,
+      score:closeChordStaffScore(cand,clef),
+      inside:minS>=0 && maxS<=8
+    });
+  }
+
+  if(candidates.length===0) return normalizePlayableChord(notes,clef);
+
+  // Prefer inside-staff candidates when they exist; choose among the better ones
+  // so close mode alternates between line-stack and space-stack positions.
+  const pool=candidates.some(c=>c.inside) ? candidates.filter(c=>c.inside) : candidates;
+  pool.sort((a,b)=>b.score-a.score);
+  const top=pool.slice(0,Math.min(4,pool.length));
+  return top[Math.floor(Math.random()*top.length)].notes;
 }
 
 function updateChordPitchRow(){
@@ -1358,13 +1460,13 @@ function buildPlayableDyad(scale,degree,voicingType){
       .sort((a,b)=>noteToMidi(a)-noteToMidi(b));
     if(voicingType==='wide') notes=spreadNotesIntoClef(notes,currentClef,14,24);
     else if(voicingType==='open') notes=spreadNotesIntoClef(notes,currentClef,9,14);
-    else notes=normalizePlayableChord(notes,currentClef);
+    else notes=chooseCloseChordInsideStaff(notes,currentClef);
     const span=chordSpanSemitones(notes);
     if(span>=3) candidates.push({...p,notes,span});
   });
 
   if(candidates.length===0){
-    return {notes:normalizePlayableChord([{...scale[degree]},{...scale[degree+2]}],currentClef), intervalName:'3rd'};
+    return {notes:chooseCloseChordInsideStaff([{...scale[degree]},{...scale[degree+2]}],currentClef), intervalName:'3rd'};
   }
 
   if(voicingType==='wide'){
@@ -1383,7 +1485,7 @@ function applyChordVoicing(notes,voicingType){
   let out=notes.map(n=>({...n}));
 
   if(voicingType==='close'){
-    return normalizePlayableChord(out,currentClef);
+    return chooseCloseChordInsideStaff(out,currentClef);
   }
 
   if(voicingType==='open'){
@@ -1498,7 +1600,7 @@ function updateChordPanel(){
   if(count) count.textContent=`選択: ${chordPitchSelection.size} / ${chordSize}`;
   if(info&&currentChord){
     const span=chordSpanSemitones(currentChord.notes);
-    info.textContent=`${currentChord.label}　鍵盤で実音 ${chordSize}音を選択してください。譜面スパン: ${span}半音`;
+    info.textContent=`${currentChord.label}　鍵盤で実音 ${chordSize}音を選択してください。C♭はB鍵、F♭はE鍵で判定します。低音域ではB1なども自動表示します。譜面スパン: ${span}半音`;
   }
   updateChordPitchRow();
   updateChordCheckDock();
@@ -2015,37 +2117,60 @@ function renderKeyboard(answerNote,wrongNote=[]){
   const wrapEl=document.getElementById('keyboard-wrap');
   const keepScroll=wrapEl?wrapEl.scrollLeft:0;
   wrap.innerHTML='';
-  const octaves=[2,3,4,5,6];
+
+  const ks=selectedKeySig;
+  const answerNotes=Array.isArray(answerNote)?answerNote:(answerNote?[answerNote]:[]);
+  const wrongNotes=Array.isArray(wrongNote)?wrongNote:(wrongNote?[wrongNote]:[]);
+  const targetNotes=(questionMode==='chord'&&currentChord)?currentChord.notes:(currentNote?[currentNote]:[]);
+  const selectedNotes=questionMode==='chord'
+    ? [...chordPitchSelection].map(parsePitchKey).filter(Boolean)
+    : (lastKeyboardPitch?[lastKeyboardPitch]:[]);
+
+  const allRelevant=[...answerNotes,...wrongNotes,...targetNotes,...selectedNotes].filter(Boolean);
+  let minOct=2, maxOct=6;
+  if(allRelevant.length){
+    const octs=allRelevant.map(n=>Math.floor(noteToMidi(n)/12)-1);
+    minOct=Math.min(minOct, Math.max(1, Math.min(...octs)));
+    maxOct=Math.max(maxOct, Math.min(7, Math.max(...octs)));
+  }
+  // If anything falls on B1 / A#1 region (ex. C♭2), ensure octave 1 is visible.
+  if(allRelevant.some(n=>noteToMidi(n) < 36)) minOct=1;
+  // If anything reaches C7 or above, ensure octave 7 is available.
+  if(allRelevant.some(n=>noteToMidi(n) >= 96)) maxOct=7;
+
+  const octaves=[];
+  for(let o=minOct;o<=maxOct;o++) octaves.push(o);
+
   const WW=28, WH=82, BW=17, BH=52;
   const totalW=octaves.length*7*WW;
   wrap.style.width=totalW+'px';
   wrap.style.height=(WH+6)+'px';
   wrap.style.position='relative';
 
-  const ks=selectedKeySig;
-  const answerNotes=Array.isArray(answerNote)?answerNote:(answerNote?[answerNote]:[]);
-  const wrongNotes=Array.isArray(wrongNote)?wrongNote:(wrongNote?[wrongNote]:[]);
-  const targetNotes=(questionMode==='chord'&&currentChord)?currentChord.notes:(currentNote?[currentNote]:[]);
   let answerDiv=null;
   let targetDiv=null;
   const highlightDivs=[];
 
-  function hasNote(list,n,oct){
-    return list.some(note=>note&&note.n===n&&note.o===oct);
+  function hasPhysicalMidi(list,midi){
+    return list.some(note=>note&&noteToMidi(note)===midi);
   }
-  function isQuestionTarget(noteName,oct){
-    return hasNote(targetNotes,noteName,oct);
+  function physicalWhiteMidi(n,oct){
+    return naturalMidi({n,o:oct});
+  }
+  function physicalBlackMidi(sharpBase,oct){
+    return naturalMidi({n:sharpBase,o:oct})+1;
   }
 
   // White keys
   octaves.forEach((oct,oi)=>{
     WHITE_NOTES.forEach((n,ni)=>{
       const x=(oi*7+ni)*WW;
-      const isNatural=!ks.sharps.includes(n)&&!ks.flats.includes(n);
-      const isAns=hasNote(answerNotes,n,oct)&&isNatural;
-      const isWrong=hasNote(wrongNotes,n,oct)&&isNatural&&!isAns;
-      const isSelected=!answered&&questionMode==='chord'&&chordPitchSelection.has(pitchKey({n,o:oct}));
-      const isTarget=isQuestionTarget(n,oct)&&isNatural;
+      const midi=physicalWhiteMidi(n,oct);
+      const isAns=hasPhysicalMidi(answerNotes,midi);
+      const isWrong=hasPhysicalMidi(wrongNotes,midi)&&!isAns;
+      const keyNote={n,o:oct,midi,physical:true,label:`${n}${oct}`};
+      const isSelected=!answered&&questionMode==='chord'&&chordPitchSelection.has(pitchKey(keyNote));
+      const isTarget=hasPhysicalMidi(targetNotes,midi);
       const d=document.createElement('div');
       d.id='key-w-'+n+oct;
       d.style.cssText=`position:absolute;left:${x}px;top:0;width:${WW-1}px;height:${WH}px;`
@@ -2062,8 +2187,8 @@ function renderKeyboard(answerNote,wrongNote=[]){
       lbl.style.cssText=`font-size:8px;font-family:'DM Mono',monospace;color:${isAns?'#12723E':(isWrong?'#B52A3A':'#CCC')};line-height:1;flex-shrink:0;`;
       lbl.textContent=n+oct;
       d.appendChild(lbl);
-      d.addEventListener('mousedown',e=>{e.preventDefault();if(questionMode==='chord'){toggleChordPitch({n,o:oct});}else{lastKeyboardPitch={n,o:oct};selectNote(n);}});
-      d.addEventListener('touchstart',e=>{e.preventDefault();if(questionMode==='chord'){toggleChordPitch({n,o:oct});}else{lastKeyboardPitch={n,o:oct};selectNote(n);}},{passive:false});
+      d.addEventListener('mousedown',e=>{e.preventDefault();if(questionMode==='chord'){toggleChordPitch(keyNote);}else{lastKeyboardPitch=keyNote;selectNote(n);}});
+      d.addEventListener('touchstart',e=>{e.preventDefault();if(questionMode==='chord'){toggleChordPitch(keyNote);}else{lastKeyboardPitch=keyNote;selectNote(n);}},{passive:false});
       wrap.appendChild(d);
       if(isAns) answerDiv=d;
       if(isAns||isWrong) highlightDivs.push(d);
@@ -2078,14 +2203,14 @@ function renderKeyboard(answerNote,wrongNote=[]){
       const useSharp = ks.sharps.includes(bk.sharpBase);
       const useFlat = ks.flats.includes(bk.flatBase);
       const keyLabel = useFlat ? `${bk.flatBase}♭` : `${bk.sharpBase}#`;
-      const selectValue = useFlat ? bk.flatBase : (useSharp ? bk.sharpBase : bk.sharpBase+'#');
+      const selectValue = useFlat ? bk.flatBase : bk.sharpBase;
       const displayValue = keyLabel;
-      const thisKey={n:selectValue,o:oct};
-      const thisMidi=noteToMidi(thisKey);
-      const isAns=answerNotes.some(note=>note&&noteToMidi(note)===thisMidi);
-      const isWrong=wrongNotes.some(note=>note&&noteToMidi(note)===thisMidi)&&!isAns;
-      const isSelected=!answered&&questionMode==='chord'&&chordPitchSelection.has(pitchKey({n:selectValue,o:oct}));
-      const isTarget=targetNotes.some(note=>note&&noteToMidi(note)===thisMidi);
+      const thisMidi=physicalBlackMidi(bk.sharpBase,oct);
+      const thisKey={n:selectValue,o:oct,midi:thisMidi,physical:true,label:`${keyLabel}${oct}`};
+      const isAns=hasPhysicalMidi(answerNotes,thisMidi);
+      const isWrong=hasPhysicalMidi(wrongNotes,thisMidi)&&!isAns;
+      const isSelected=!answered&&questionMode==='chord'&&chordPitchSelection.has(pitchKey(thisKey));
+      const isTarget=hasPhysicalMidi(targetNotes,thisMidi);
       const d=document.createElement('div');
       d.id='key-b-'+bk.sharpBase+oct;
       d.style.cssText=`position:absolute;left:${x}px;top:0;width:${BW}px;height:${BH}px;`
@@ -2096,8 +2221,8 @@ function renderKeyboard(answerNote,wrongNote=[]){
       lbl.style.cssText=`font-size:7px;font-family:'DM Mono',monospace;color:${(isAns||isWrong||isSelected)?'#fff':'#666'};line-height:1;`;
       lbl.textContent=keyLabel;
       d.appendChild(lbl);
-      d.addEventListener('mousedown',e=>{e.preventDefault();if(questionMode==='chord'){toggleChordPitch({n:selectValue,o:oct});}else{lastKeyboardPitch={n:selectValue,o:oct};selectNote(selectValue,displayValue);}});
-      d.addEventListener('touchstart',e=>{e.preventDefault();if(questionMode==='chord'){toggleChordPitch({n:selectValue,o:oct});}else{lastKeyboardPitch={n:selectValue,o:oct};selectNote(selectValue,displayValue);}},{passive:false});
+      d.addEventListener('mousedown',e=>{e.preventDefault();if(questionMode==='chord'){toggleChordPitch(thisKey);}else{lastKeyboardPitch=thisKey;selectNote(selectValue,displayValue);}});
+      d.addEventListener('touchstart',e=>{e.preventDefault();if(questionMode==='chord'){toggleChordPitch(thisKey);}else{lastKeyboardPitch=thisKey;selectNote(selectValue,displayValue);}},{passive:false});
       wrap.appendChild(d);
       if(isAns) answerDiv=d;
       if(isAns||isWrong) highlightDivs.push(d);
@@ -2123,8 +2248,9 @@ function renderKeyboard(answerNote,wrongNote=[]){
       const wrapW=wrapEl.clientWidth;
       wrapEl.scrollLeft=keyLeft - wrapW/2 + keyW/2;
     } else {
-      const c4x=(octaves.indexOf(4)*7)*WW;
-      wrapEl.scrollLeft=c4x - wrapEl.clientWidth/2 + WW*3;
+      const preferredOct=octaves.includes(4) ? 4 : octaves[Math.floor(octaves.length/2)];
+      const px=(octaves.indexOf(preferredOct)*7)*WW;
+      wrapEl.scrollLeft=px - wrapEl.clientWidth/2 + WW*3;
     }
   } else {
     wrapEl.scrollLeft=keepScroll;
