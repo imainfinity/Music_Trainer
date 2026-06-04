@@ -312,6 +312,42 @@ svg.staff{height:190px;filter:drop-shadow(0 10px 20px rgba(0,0,0,.08));}
   border:1px solid rgba(255,255,255,.09);
 }
 .chord-panel.show{display:block;}
+.practice-dashboard{
+  margin:0 0 14px;
+  display:grid;
+  grid-template-columns:1.08fr .92fr;
+  gap:10px;
+}
+.practice-card{
+  padding:12px;
+  border-radius:18px;
+  background:rgba(255,255,255,.055);
+  border:1px solid rgba(255,255,255,.09);
+}
+.practice-card-title{
+  font-family:var(--mono);
+  font-size:11px;
+  color:rgba(246,241,231,.58);
+  letter-spacing:.08em;
+  margin-bottom:9px;
+}
+.practice-controls{display:flex;flex-wrap:wrap;gap:7px;align-items:center;}
+.practice-subline{
+  margin-top:8px;
+  font-family:var(--mono);
+  font-size:11px;
+  color:rgba(246,241,231,.56);
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.chord-panel.compact-old{display:none!important;}
+.challenge-panel.compact-old{display:none!important;}
+@media (max-width:720px){
+  .practice-dashboard{grid-template-columns:1fr;gap:8px;}
+  .practice-card{padding:10px;}
+  .practice-subline{white-space:normal;}
+}
 .chord-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;}
 .chord-size-row{display:flex;gap:7px;flex-wrap:wrap;}
 .chord-size-btn,.chord-action-btn{
@@ -635,7 +671,7 @@ input[type="range"]{accent-color:#7DB7FF;}
     <div class="keysig-tip" id="keysig-tip"></div>
   </div>
 
-  <div class="chord-panel" id="chord-panel">
+  <div class="chord-panel compact-old" id="chord-panel">
     <div class="chord-row">
       <div class="chord-size-row">
         <button class="chord-size-btn active" id="chord-size-2" onclick="setChordSize(2)">2音</button>
@@ -660,7 +696,7 @@ input[type="range"]{accent-color:#7DB7FF;}
     <div class="chord-pitch-row" id="chord-pitch-row"></div>
   </div>
 
-  <div class="challenge-panel">
+  <div class="challenge-panel compact-old">
     <div class="challenge-row">
       <div class="challenge-left">
         <button class="challenge-btn" id="log-toggle-btn" onclick="toggleDailyLogging()">LOG OFF</button>
@@ -689,6 +725,41 @@ input[type="range"]{accent-color:#7DB7FF;}
     <div class="challenge-log" id="challenge-log"></div>
   </div>
 
+
+  <div class="practice-dashboard">
+    <div class="practice-card">
+      <div class="practice-card-title">CHORD / SEQUENCE SETTINGS</div>
+      <div class="practice-controls">
+        <button class="chord-size-btn active" id="top-chord-size-2" onclick="setChordSize(2)">2音</button>
+        <button class="chord-size-btn" id="top-chord-size-3" onclick="setChordSize(3)">3音</button>
+        <button class="chord-size-btn" id="top-chord-size-4" onclick="setChordSize(4)">4音</button>
+        <button class="chord-size-btn" id="top-chord-size-5" onclick="setChordSize(5)">5音</button>
+        <button class="chord-size-btn" id="top-chord-size-random" onclick="setChordSize('random')">2-5</button>
+        <span class="seq-mode-sep"></span>
+        <button class="chord-size-btn active" id="top-voicing-mixed" onclick="setChordVoicing('mixed')">Mixed</button>
+        <button class="chord-size-btn" id="top-voicing-close" onclick="setChordVoicing('close')">Close</button>
+        <button class="chord-size-btn" id="top-voicing-open" onclick="setChordVoicing('open')">Open</button>
+        <button class="chord-size-btn" id="top-voicing-wide" onclick="setChordVoicing('wide')">Large</button>
+      </div>
+      <div class="practice-subline" id="practice-chord-summary">重音設定</div>
+    </div>
+    <div class="practice-card">
+      <div class="practice-card-title">TRAINING / LOG</div>
+      <div class="practice-controls">
+        <button class="challenge-btn" id="top-log-toggle-btn" onclick="toggleDailyLogging()">LOG OFF</button>
+        <button class="challenge-btn active" id="top-finger-toggle-btn" onclick="toggleFiveFingerMode()">5-FINGER ON</button>
+        <button class="challenge-btn active" id="top-seq-len-5" onclick="setSequenceLength(5)">SEQ 5</button>
+        <button class="challenge-btn" id="top-seq-len-random" onclick="setSequenceLength('random')">SEQ 2-5</button>
+        <button class="challenge-btn" id="top-seq-len-10" onclick="setSequenceLength(10)">10</button>
+        <button class="challenge-btn" onclick="startChallengeTimer(60)">60s</button>
+        <button class="challenge-btn" onclick="startChallengeTimer(180)">3m</button>
+        <button class="challenge-btn" onclick="stopChallengeTimer()">STOP</button>
+        <button class="challenge-btn" onclick="toggleLogView()">LOG</button>
+        <button class="challenge-btn" onclick="saveDailyLogManual()">SAVE</button>
+      </div>
+      <div class="practice-subline" id="practice-log-summary">LOG OFF / Timer ready</div>
+    </div>
+  </div>
 
   <div class="staff-card">
     <div class="clef-badge"><span class="clef-dot"></span><span id="clef-label">TREBLE CLEF — ト音記号</span></div>
@@ -1214,9 +1285,12 @@ function setQuestionMode(mode,el){
 
 function setChordSize(size){
   chordSize=size==='random'?'random':parseInt(size,10);
-  document.querySelectorAll('[id^=chord-size-]').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('[id^=chord-size-], [id^=top-chord-size-]').forEach(x=>x.classList.remove('active'));
   const btn=document.getElementById('chord-size-'+chordSize);
+  const topBtn=document.getElementById('top-chord-size-'+chordSize);
   if(btn) btn.classList.add('active');
+  if(topBtn) topBtn.classList.add('active');
+  updatePracticeSummary();
   if(questionMode==='chord'||questionMode==='chordseq') nextQuestion();
 }
 
@@ -1227,9 +1301,12 @@ function resolveChordSize(){
 
 function setChordVoicing(mode){
   chordVoicingMode=mode;
-  document.querySelectorAll('[id^=voicing-]').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('[id^=voicing-], [id^=top-voicing-]').forEach(x=>x.classList.remove('active'));
   const btn=document.getElementById('voicing-'+mode);
+  const topBtn=document.getElementById('top-voicing-'+mode);
   if(btn) btn.classList.add('active');
+  if(topBtn) topBtn.classList.add('active');
+  updatePracticeSummary();
   if(questionMode==='chord'||questionMode==='chordseq') nextQuestion();
 }
 
@@ -1648,28 +1725,163 @@ function getDiatonicChordQuality(deg,size){
   return roman3[deg];
 }
 
+
+function uniqueByPitch(notes){
+  const seen=new Set();
+  return notes.filter(n=>{
+    const k=pitchKey(n);
+    if(seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
+function buildRandomChordNotes(scale,degree,size){
+  // Mix thirds, seconds, fourths, added tones and inversions.
+  // This avoids only stacked triads while staying diatonic to the selected key.
+  const libraries={
+    2:[[0,2],[0,3],[0,4],[0,5],[0,7]],
+    3:[[0,2,4],[0,2,5],[0,3,5],[0,4,7],[0,2,6],[1,3,5],[0,1,4]],
+    4:[[0,2,4,6],[0,2,5,7],[0,3,5,8],[0,2,4,8],[1,3,5,7],[0,4,6,9],[0,1,4,6]],
+    5:[[0,2,4,6,8],[0,2,5,7,9],[0,3,5,7,10],[0,2,4,7,9],[1,3,5,8,10],[0,1,4,6,8]]
+  };
+  const lib=libraries[size]||libraries[3];
+  const pattern=lib[Math.floor(Math.random()*lib.length)];
+  let notes=pattern.map(off=>scale[degree+off]).filter(Boolean).map(n=>({...n}));
+  for(let i=0;notes.length<size&&scale[degree+i];i++){
+    notes.push({...scale[degree+i]});
+    notes=uniqueByPitch(notes);
+  }
+  const inv=Math.floor(Math.random()*Math.max(1,notes.length));
+  for(let i=0;i<inv;i++) notes[i].o+=1;
+  notes=notes.sort((a,b)=>noteToMidi(a)-noteToMidi(b));
+  return repairChordNotes(notes,size,fiveFingerMode?12:24);
+}
+
+function humanizeChordShape(notes,maxSpan=12){
+  let base=normalizePlayableChord(notes,currentClef).sort((a,b)=>noteToMidi(a)-noteToMidi(b));
+  const candidates=[];
+  for(let rot=0;rot<base.length;rot++){
+    let cand=base.map(n=>({...n}));
+    for(let i=0;i<rot;i++) cand[i].o+=1;
+    cand=normalizePlayableChord(cand,currentClef).sort((a,b)=>noteToMidi(a)-noteToMidi(b));
+    if(chordSpanSemitones(cand)<=maxSpan){
+      const steps=cand.map(n=>staffStepValue(n,currentClef));
+      const spreadSteps=Math.max(...steps)-Math.min(...steps);
+      const key=cand.map(pitchKey).join(',');
+      if(!candidates.some(c=>c.key===key)) candidates.push({key,notes:cand,score:spreadSteps+Math.random()*3});
+    }
+  }
+  if(!candidates.length) return base;
+  candidates.sort((a,b)=>b.score-a.score);
+  return candidates[Math.floor(Math.random()*Math.min(4,candidates.length))].notes;
+}
+
+
+function hasDuplicateMidi(notes){
+  const mids=notes.map(noteToMidi);
+  return new Set(mids).size!==mids.length;
+}
+
+function chordPlayable(notes,size,maxSpan=12){
+  if(!notes||notes.length!==size) return false;
+  if(hasDuplicateMidi(notes)) return false;
+  if(chordSpanSemitones(notes)>maxSpan) return false;
+  return true;
+}
+
+function makeUniquePlayableWindow(size){
+  // Build actual-key unique notes inside one octave.
+  // This is the emergency fallback for 5-FINGER: no duplicate keys, no impossible span.
+  const pool=(currentClef==='treble'?TREBLE_POOL:BASS_POOL)
+    .map(n=>({...n}))
+    .sort((a,b)=>noteToMidi(a)-noteToMidi(b));
+  const windows=[];
+  for(let i=0;i<pool.length;i++){
+    const base=pool[i];
+    const group=pool.filter(n=>{
+      const diff=Math.abs(noteToMidi(n)-noteToMidi(base));
+      return diff<=12;
+    });
+    const unique=[];
+    const seen=new Set();
+    group.forEach(n=>{
+      const m=noteToMidi(n);
+      if(!seen.has(m)){
+        seen.add(m);
+        unique.push({...n});
+      }
+    });
+    if(unique.length>=size) windows.push(unique);
+  }
+  const win=windows.length?windows[Math.floor(Math.random()*windows.length)]:pool;
+  const shuffled=win.slice().sort(()=>Math.random()-.5);
+  return shuffled.slice(0,size).sort((a,b)=>noteToMidi(a)-noteToMidi(b));
+}
+
+function repairChordNotes(notes,size,maxSpan=12){
+  let out=notes.map(n=>({...n})).sort((a,b)=>noteToMidi(a)-noteToMidi(b));
+
+  // Remove duplicate actual keys first.
+  const unique=[];
+  const seen=new Set();
+  out.forEach(n=>{
+    const m=noteToMidi(n);
+    if(!seen.has(m)){
+      seen.add(m);
+      unique.push({...n});
+    }
+  });
+  out=unique;
+
+  // Fill missing notes from a playable one-octave window near the current center.
+  if(out.length<size){
+    const fallback=makeUniquePlayableWindow(size);
+    const center=out.length ? out.reduce((a,n)=>a+noteToMidi(n),0)/out.length : noteToMidi(fallback[0]);
+    fallback.sort((a,b)=>Math.abs(noteToMidi(a)-center)-Math.abs(noteToMidi(b)-center));
+    fallback.forEach(n=>{
+      if(out.length>=size) return;
+      const m=noteToMidi(n);
+      if(!out.some(x=>noteToMidi(x)===m)) out.push({...n});
+    });
+  }
+
+  out=out.sort((a,b)=>noteToMidi(a)-noteToMidi(b));
+
+  // If still too wide or invalid, use a fresh playable window.
+  if(!chordPlayable(out,size,maxSpan)){
+    out=makeUniquePlayableWindow(size);
+  }
+
+  return out.slice(0,size).sort((a,b)=>noteToMidi(a)-noteToMidi(b));
+}
+
 function generateChordQuestion(){
   const rootLetter=getMajorRootLetter();
   const baseOct=currentClef==='treble'?4:2;
   const scale=buildLetterScale(rootLetter,baseOct);
   const degree=Math.floor(Math.random()*7);
   currentChordSize=resolveChordSize();
-  const offsets=currentChordSize===2?[0,2]:(currentChordSize===3?[0,2,4]:(currentChordSize===4?[0,2,4,6]:[0,2,4,6,8]));
   const voicingType=pickVoicingType();
   const quality=getDiatonicChordQuality(degree,currentChordSize);
   const voicingLabel={close:'Close',open:'Open',wide:'Large Spread'}[voicingType]||'Mixed';
 
   let closeNotes, notes, intervalName='';
-  if(chordSize===2){
+  if(currentChordSize===2){
     const dyad=buildPlayableDyad(scale,degree,voicingType);
     notes=dyad.notes;
+    if(Math.random()<0.35) notes=humanizeChordShape(notes,fiveFingerMode?12:16);
     closeNotes=notes;
     intervalName=dyad.intervalName;
   }else{
-    closeNotes=offsets.map(o=>scale[degree+o]);
+    closeNotes=buildRandomChordNotes(scale,degree,currentChordSize);
     notes=applyChordVoicing(closeNotes,voicingType);
+    if(fiveFingerMode || voicingType==='close' || Math.random()<0.65){
+      notes=humanizeChordShape(notes,fiveFingerMode?12:(voicingType==='wide'?24:16));
+    }
   }
 
+  notes=repairChordNotes(notes,currentChordSize,fiveFingerMode?12:(voicingType==='wide'?24:16));
   const letters=[...new Set(notes.map(n=>n.n))];
   return {
     notes,
@@ -1686,22 +1898,28 @@ function generateChordQuestion(){
 
 
 function generateChordQuestionSafe(){
-  const ch=generateChordQuestion();
+  const targetSize=resolveChordSize();
+  const maxSpan=fiveFingerMode?12:24;
 
-  // 5-FINGER ON: maximum one octave, but still vary inversion/shape.
-  // Do not collapse everything into the same root-position close stack.
-  if(fiveFingerMode){
-    if(chordSpanSemitones(ch.notes)>12){
-      ch.notes=applyPlayableInversion(ch.notes,12);
-      ch.letters=[...new Set(ch.notes.map(n=>n.n))];
-      ch.label=ch.label.replace('Large Spread','Playable');
-      ch.voicingLabel='Playable';
-    }else if(ch.notes.length>=3 && Math.random()<0.65){
-      ch.notes=applyPlayableInversion(ch.notes,12);
-      ch.letters=[...new Set(ch.notes.map(n=>n.n))];
+  for(let i=0;i<40;i++){
+    const ch=generateChordQuestion();
+    ch.notes=repairChordNotes(ch.notes,currentChordSize,maxSpan);
+    ch.letters=[...new Set(ch.notes.map(n=>n.n))];
+
+    if(chordPlayable(ch.notes,currentChordSize,maxSpan)){
+      if(fiveFingerMode && ch.notes.length>=3 && Math.random()<0.45){
+        ch.notes=repairChordNotes(humanizeChordShape(ch.notes,12),currentChordSize,12);
+        ch.letters=[...new Set(ch.notes.map(n=>n.n))];
+      }
+      return ch;
     }
   }
 
+  const ch=generateChordQuestion();
+  ch.notes=makeUniquePlayableWindow(currentChordSize||targetSize);
+  ch.letters=[...new Set(ch.notes.map(n=>n.n))];
+  ch.voicingLabel='Playable';
+  ch.label=ch.label.replace('Large Spread','Playable');
   return ch;
 }
 
@@ -1712,9 +1930,28 @@ function updateChordCheckDock(){
   const show=(questionMode==='chord'||questionMode==='chordseq');
   dock.classList.toggle('show',show);
   if(show){
-    const seqText=questionMode==='chordseq'?` ${Math.min(chordSequenceIndex+1,Math.max(1,currentChordSequence.length))}/${Math.max(1,currentChordSequence.length)} /`:'';
+    let seqText='';
+    if(questionMode==='chordseq'){
+      if(answered){
+        seqText=` 振り返り ${chordSequenceReviewIndex+1}/${Math.max(1,currentChordSequence.length)} /`;
+      }else{
+        seqText=` ${Math.min(chordSequenceIndex+1,Math.max(1,currentChordSequence.length))}/${Math.max(1,currentChordSequence.length)} /`;
+      }
+    }
     status.textContent=`重音${seqText} 選択: ${chordPitchSelection.size} / ${currentChordSize}`;
   }
+}
+
+
+function updatePracticeSummary(){
+  const chordSummary=document.getElementById('practice-chord-summary');
+  if(chordSummary){
+    const sizeLabel=chordSize==='random'?'2-5 random':`${chordSize}音`;
+    chordSummary.textContent=`Chord: ${sizeLabel} / ${voicingTypeLabel(chordVoicingMode)} / ${fiveFingerMode?'5-FINGER unique / max octave':'wide allowed'}`;
+  }
+  const logSummary=document.getElementById('practice-log-summary');
+  const oldStatus=document.getElementById('challenge-status');
+  if(logSummary&&oldStatus) logSummary.textContent=oldStatus.textContent;
 }
 
 function updateChordPanel(){
@@ -1809,6 +2046,8 @@ function submitChordAnswer(){
     if(history.length>10) history.pop();
     renderHistory();
     updateStats();
+    chordPitchSelection.clear();
+    chordPitchOrder=[];
     chordSequenceReviewIndex=0;
     reviewChordSeqBundle(0);
     const nextBtn=document.getElementById('next-btn');
@@ -1920,10 +2159,14 @@ function setSequenceLength(len){
   localStorage.setItem('musicTrainerSequenceLength',String(sequenceLength));
   [5,10,15,20].forEach(n=>{
     const btn=document.getElementById('seq-len-'+n);
+    const topBtn=document.getElementById('top-seq-len-'+n);
     if(btn) btn.classList.toggle('active',n===sequenceLength);
+    if(topBtn) topBtn.classList.toggle('active',n===sequenceLength);
   });
   const rbtn=document.getElementById('seq-len-random');
+  const topRbtn=document.getElementById('top-seq-len-random');
   if(rbtn) rbtn.classList.toggle('active',sequenceLength==='random');
+  if(topRbtn) topRbtn.classList.toggle('active',sequenceLength==='random');
   if(questionMode==='sequence'||questionMode==='chord'||questionMode==='chordseq') nextQuestion();
 }
 
@@ -1949,6 +2192,11 @@ function toggleFiveFingerMode(){
   if(btn){
     btn.textContent=fiveFingerMode?'5-FINGER ON':'5-FINGER OFF';
     btn.classList.toggle('active',fiveFingerMode);
+  }
+  const topBtn=document.getElementById('top-finger-toggle-btn');
+  if(topBtn){
+    topBtn.textContent=fiveFingerMode?'5-FINGER ON':'5-FINGER OFF';
+    topBtn.classList.toggle('active',fiveFingerMode);
   }
   if(questionMode==='sequence'||questionMode==='chord'||questionMode==='chordseq') nextQuestion();
 }
@@ -1991,16 +2239,20 @@ function reviewChordSeqBundle(idx){
   chordSequenceReviewIndex=Math.max(0,Math.min(idx,currentChordSequence.length-1));
   currentChord=currentChordSequence[chordSequenceReviewIndex];
   currentNote=currentChord.notes[0];
-  const r=chordSequenceResults[chordSequenceReviewIndex]||gradeChordSeqSelection(currentChord,chordSequenceSelections[chordSequenceReviewIndex]||[]);
+
+  const savedSelection=chordSequenceSelections[chordSequenceReviewIndex]||[];
+  const r=chordSequenceResults[chordSequenceReviewIndex]||gradeChordSeqSelection(currentChord,savedSelection);
+
   renderStaff();
   renderKeyboard(currentChord.notes,r.wrongPitchNotes||[]);
   updateChordPanel();
+  updateChordCheckDock();
+
   const fb=document.getElementById('feedback');
   const mark=r.correct?'✓':'✗';
-  fb.textContent=`${mark} 束 ${chordSequenceReviewIndex+1}/${currentChordSequence.length} / 正解: ${currentChord.notes.map(pitchLabel).join('・')} / 選択: ${formatChordSelection(chordSequenceSelections[chordSequenceReviewIndex])}`;
+  fb.textContent=`${mark} 振り返り ${chordSequenceReviewIndex+1}/${currentChordSequence.length} / 正解: ${currentChord.notes.map(pitchLabel).join('・')} / 選択: ${formatChordSelection(savedSelection)}`;
   fb.className=r.correct?'feedback-bar ok':'feedback-bar ng';
 }
-
 function nextChordSeqReview(){
   if(questionMode==='chordseq'&&answered) reviewChordSeqBundle(chordSequenceReviewIndex+1);
 }
@@ -2427,6 +2679,11 @@ function updateStats(){
 // ---- Staff rendering ----
 function renderStaff(){
   const svg=document.getElementById('staff-svg');
+  if(!svg) return;
+  if(!currentNote && !(currentChord&&currentChord.notes&&currentChord.notes.length) && !(currentSequence&&currentSequence.length)){
+    const pool=currentClef==='bass'?BASS_POOL:TREBLE_POOL;
+    currentNote=pool[Math.floor(Math.random()*pool.length)];
+  }
   svg.innerHTML='';
 
   const ls=12, topLineY=28;
@@ -2518,24 +2775,52 @@ function renderStaff(){
       const baseX=clusterBaseX+ci*clusterGap;
       const chordPlaced=[];
       const sorted=chord.notes.slice().sort((a,b)=>getNoteY(a,currentClef,topLineY,ls)-getNoteY(b,currentClef,topLineY,ls));
+
+      const isCurrentReview=answered && ci===chordSequenceReviewIndex;
+      const isCurrentInput=!answered && ci===chordSequenceIndex;
+      const r=chordSequenceResults[ci];
+      const isDone=answered ? !!r : ci<chordSequenceIndex;
+
+      // Background box:
+      // - current input/review: blue
+      // - correct done: green
+      // - wrong done: red
+      // - future: gray
+      let boxStroke='rgba(130,140,160,.18)';
+      let boxFill='rgba(120,130,150,.035)';
+      if(isCurrentInput || isCurrentReview){
+        boxStroke='rgba(45,95,163,.48)';
+        boxFill='rgba(45,95,163,.09)';
+      }else if(isDone && r && r.correct){
+        boxStroke='rgba(35,164,90,.28)';
+        boxFill='rgba(35,164,90,.045)';
+      }else if(isDone && r && !r.correct){
+        boxStroke='rgba(196,59,75,.30)';
+        boxFill='rgba(196,59,75,.045)';
+      }
+
+      const bg=el('rect',{x:baseX-26,y:topLineY-20,width:62,height:bottomLine-topLineY+40,rx:12,fill:boxFill,stroke:boxStroke,'stroke-width':isCurrentInput||isCurrentReview?2.2:1.3},svg);
+      bg.style.cursor='pointer';
+      bg.addEventListener('click',()=>{ if(answered) reviewChordSeqBundle(ci); });
+
       sorted.forEach((note,ni)=>{
         const noteY=getNoteY(note,currentClef,topLineY,ls);
         const prevY=ni>0?getNoteY(sorted[ni-1],currentClef,topLineY,ls):null;
         const side=prevY!==null&&Math.abs(prevY-noteY)<=6 ? 12 : 0;
         const x=baseX+side;
         drawLedgerLinesFor(noteY,x);
-        let color=nc, strokeColor='#204978';
-        if(ci<chordSequenceIndex){
-          const r=chordSequenceResults[ci];
-          color=r&&r.correct?'#23A45A':'#C43B4B';
-          strokeColor=color;
-        }else if(ci===chordSequenceIndex){
+
+        let color='#7C8AA0', strokeColor='#657184';
+        if(isCurrentInput){
           color='#2D5FA3'; strokeColor='#102F62';
-          const box=el('rect',{x:baseX-24,y:topLineY-18,width:58,height:bottomLine-topLineY+36,rx:12,fill:'rgba(45,95,163,.045)',stroke:'rgba(45,95,163,.28)','stroke-width':2},svg);
-          box.style.cursor='pointer';
-          box.addEventListener('click',()=>{ if(answered) reviewChordSeqBundle(ci); });
-        }else{
-          color='#7C8AA0'; strokeColor='#657184';
+        }else if(isCurrentReview){
+          // Current review bundle: use result color strongly.
+          if(r&&r.correct){ color='#23A45A'; strokeColor='#126836'; }
+          else { color='#C43B4B'; strokeColor='#7F1E29'; }
+        }else if(isDone && r){
+          // Other bundles are dimmed so only the reviewed bundle stands out.
+          if(r.correct){ color='rgba(35,164,90,.38)'; strokeColor='rgba(18,104,54,.42)'; }
+          else { color='rgba(196,59,75,.38)'; strokeColor='rgba(127,30,41,.42)'; }
         }
         drawNoteHead(x,noteY,color,strokeColor);
         chordPlaced.push({x,y:noteY,color});
@@ -2550,12 +2835,18 @@ function renderStaff(){
         const sx=stemUp?(baseX+18):(baseX-10);
         const y1=stemUp?maxY:minY;
         const y2=stemUp?(minY-38):(maxY+38);
-        const stemColor=ci<chordSequenceIndex?(chordSequenceResults[ci]&&chordSequenceResults[ci].correct?'#23A45A':'#C43B4B'):nc;
-        el('line',{x1:sx,x2:sx,y1:y1,y2:y2,stroke:stemColor,'stroke-width':2.2,'stroke-linecap':'round'},svg);
+        let stemColor='rgba(124,138,160,.55)';
+        if(isCurrentInput) stemColor=nc;
+        else if(isCurrentReview) stemColor=(r&&r.correct)?'#23A45A':'#C43B4B';
+        else if(isDone&&r) stemColor=r.correct?'rgba(35,164,90,.42)':'rgba(196,59,75,.42)';
+        el('line',{x1:sx,x2:sx,y1:y1,y2:y2,stroke:stemColor,'stroke-width':isCurrentInput||isCurrentReview?2.4:1.8,'stroke-linecap':'round'},svg);
       }
+
+      // Click layer for after-answer review.
       const clickLayer=el('rect',{x:baseX-30,y:topLineY-24,width:66,height:bottomLine-topLineY+48,rx:12,fill:'transparent'},svg);
       clickLayer.style.cursor='pointer';
       clickLayer.addEventListener('click',()=>{ if(answered) reviewChordSeqBundle(ci); });
+
       placedSeq.push(...chordPlaced);
     });
     finishViewBox(0,0);
@@ -2854,6 +3145,8 @@ function updateChallengeStatus(){
   const el=document.getElementById('challenge-status');
   const btn=document.getElementById('log-toggle-btn');
   if(btn){btn.textContent=challengeLogging?'LOG ON':'LOG OFF';btn.classList.toggle('active',challengeLogging);}
+  const topLog=document.getElementById('top-log-toggle-btn');
+  if(topLog){topLog.textContent=challengeLogging?'LOG ON':'LOG OFF';topLog.classList.toggle('active',challengeLogging);}
   if(!el) return;
   let timerText='Timer ready';
   if(challengeEndAt){
@@ -2862,6 +3155,7 @@ function updateChallengeStatus(){
   }
   const acc=stats.total?Math.round(stats.correct/stats.total*100):0;
   el.textContent=`${challengeLogging?'LOG ON':'LOG OFF'} / ${timerText} / SEQ ${sequenceLength==='random'?'2-5':sequenceLength} / ${stats.correct}/${stats.total} ${stats.total?acc+'%':'—'}`;
+  updatePracticeSummary();
 }
 function toggleDailyLogging(){
   challengeLogging=!challengeLogging;
@@ -3103,16 +3397,53 @@ document.addEventListener('keydown',e=>{
 });
 
 // INIT
-buildKeySigUI();
-initFiveFingerMode();
-initSequenceLength();
-initChallengeLog();
-initKeyboardScrollRail();
-nextQuestion();
-updateKeyTip();
-newRhythm();
-renderHistory();
-updateKeyboardScrollRail();
+let appInitialized=false;
+
+function forceInitialStaffRender(){
+  // Some mobile browsers can miss the first SVG paint on the default C major state.
+  // Re-render after layout/font readiness without changing the question.
+  if(!currentNote && !(currentChord&&currentChord.notes&&currentChord.notes.length) && !(currentSequence&&currentSequence.length)){
+    nextQuestion();
+    return;
+  }
+  renderStaff();
+  renderKeyboard(null);
+  updateKeyTip();
+  updateChordPanel();
+  updateKeyboardScrollRail();
+  updatePracticeSummary();
+}
+
+function initApp(){
+  if(appInitialized) return;
+  appInitialized=true;
+
+  buildKeySigUI();
+  initFiveFingerMode();
+  initSequenceLength();
+  initChallengeLog();
+  initKeyboardScrollRail();
+  nextQuestion();
+  updateKeyTip();
+  newRhythm();
+  renderHistory();
+  updateKeyboardScrollRail();
+  updatePracticeSummary();
+
+  requestAnimationFrame(()=>forceInitialStaffRender());
+  setTimeout(()=>forceInitialStaffRender(),120);
+  setTimeout(()=>forceInitialStaffRender(),450);
+
+  if(document.fonts && document.fonts.ready){
+    document.fonts.ready.then(()=>forceInitialStaffRender()).catch(()=>{});
+  }
+}
+
+if(document.readyState==='loading'){
+  document.addEventListener('DOMContentLoaded',initApp);
+}else{
+  initApp();
+}
 </script>
 </body>
 </html>
