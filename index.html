@@ -622,6 +622,109 @@ input[type="range"]{accent-color:#7DB7FF;}
   .keyboard-mode-btn{width:100%;}
 }
 
+
+/* Mobile sight-reading layout:
+   Keep the score visible while the user is down at the keyboard. */
+@media (max-width:720px){
+  body.mobile-practice-active .practice-dashboard,
+  body.mobile-practice-active .keysig-panel,
+  body.mobile-practice-active .settings-bar,
+  body.mobile-practice-active .stats-row{
+    display:none!important;
+  }
+
+  body.mobile-practice-active .page{
+    padding-top:8px;
+  }
+
+  body.mobile-practice-active .staff-card{
+    position:sticky;
+    top:0;
+    z-index:80;
+    margin:0 0 8px;
+    padding:8px 10px 6px;
+    border-radius:0 0 20px 20px;
+    box-shadow:0 16px 38px rgba(0,0,0,.38), inset 0 1px 0 rgba(255,255,255,.65);
+  }
+
+  body.mobile-practice-active .clef-badge{
+    font-size:10px;
+    margin-bottom:2px;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+
+  body.mobile-practice-active svg.staff{
+    height:96px!important;
+    max-height:30vh;
+  }
+
+  body.mobile-practice-active .staff-skip-btn{
+    margin:6px 0 8px;
+    padding:9px 10px;
+    border-radius:12px;
+  }
+
+  body.mobile-practice-active .feedback-bar{
+    margin-bottom:8px;
+    padding:8px 10px;
+    font-size:12px;
+  }
+
+  body.mobile-practice-active .note-buttons{
+    gap:6px;
+    margin-bottom:8px;
+  }
+
+  body.mobile-practice-active .note-btn{
+    min-height:58px;
+    aspect-ratio:auto;
+  }
+
+  body.mobile-practice-active .chord-check-dock{
+    margin:8px 0;
+    padding:8px 10px;
+  }
+
+  body.mobile-practice-active .keyboard-mode-bar{
+    margin-bottom:6px;
+    padding:8px 10px;
+  }
+
+  body.mobile-practice-active .keyboard-wrap{
+    padding:8px 10px 8px;
+    margin-bottom:8px;
+  }
+
+  body.mobile-practice-active .skip-btn{
+    margin-top:8px;
+  }
+
+  .mobile-focus-toggle{
+    display:block;
+    width:100%;
+    margin:6px 0 8px;
+    padding:8px 10px;
+    border-radius:14px;
+    border:1px solid rgba(255,255,255,.13);
+    background:rgba(255,255,255,.07);
+    color:rgba(246,241,231,.75);
+    font-family:var(--mono);
+    font-size:11px;
+    cursor:pointer;
+  }
+
+  body.mobile-practice-active .mobile-focus-toggle{
+    background:linear-gradient(135deg,rgba(71,119,255,.78),rgba(125,93,255,.78));
+    color:#fff;
+  }
+}
+
+@media (min-width:721px){
+  .mobile-focus-toggle{display:none;}
+}
+
 </style>
 </head>
 <body>
@@ -767,6 +870,7 @@ input[type="range"]{accent-color:#7DB7FF;}
   </div>
 
   <button class="staff-skip-btn" onclick="nextQuestion()">次の問題へ / Skip →</button>
+  <button class="mobile-focus-toggle" id="mobile-focus-toggle" onclick="toggleMobilePracticeMode()">楽譜固定モード / Score Fixed</button>
 
   <div class="feedback-bar wait" id="feedback">音名ボタンまたは鍵盤をタップ</div>
 
@@ -3410,6 +3514,36 @@ document.addEventListener('keydown',e=>{
   nextQuestion();
 });
 
+
+let mobilePracticeMode=false;
+
+function applyMobilePracticeMode(){
+  document.body.classList.toggle('mobile-practice-active',mobilePracticeMode);
+  const btn=document.getElementById('mobile-focus-toggle');
+  if(btn){
+    btn.textContent=mobilePracticeMode
+      ? '楽譜固定中 / Score Fixed ON'
+      : '楽譜固定モード / Score Fixed';
+  }
+  setTimeout(()=>{ renderStaff(); updateKeyboardScrollRail(); },60);
+}
+
+function toggleMobilePracticeMode(){
+  mobilePracticeMode=!mobilePracticeMode;
+  localStorage.setItem('musicTrainerMobilePracticeMode',mobilePracticeMode?'1':'0');
+  applyMobilePracticeMode();
+}
+
+function initMobilePracticeMode(){
+  const saved=localStorage.getItem('musicTrainerMobilePracticeMode');
+  mobilePracticeMode=saved==='1';
+  // On phones, default ON because the keyboard otherwise hides the score.
+  if(saved===null && window.matchMedia && window.matchMedia('(max-width:720px)').matches){
+    mobilePracticeMode=true;
+  }
+  applyMobilePracticeMode();
+}
+
 // INIT
 let appInitialized=false;
 
@@ -3437,6 +3571,7 @@ function initApp(){
   initSequenceLength();
   initChallengeLog();
   initKeyboardScrollRail();
+  initMobilePracticeMode();
   nextQuestion();
   updateKeyTip();
   newRhythm();
@@ -3457,6 +3592,7 @@ function initApp(){
 }
 
 window.addEventListener('load',()=>{ initApp(); forceInitialStaffRender(); setTimeout(forceInitialStaffRender,250); });
+window.addEventListener('resize',()=>{ applyMobilePracticeMode(); forceInitialStaffRender(); });
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden) forceInitialStaffRender(); });
 
 if(document.readyState==='loading'){
