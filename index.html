@@ -2162,6 +2162,17 @@ function scheduleChordAutoSubmit(){
   },180);
 }
 
+
+function coreCurrentRequiredChordCount(){
+  if(coreQuestion && coreQuestion.mode==='chordseq'){
+    const b=coreQuestion.bundles && coreQuestion.bundles[coreQuestion.index];
+    if(b && b.notes && b.notes.length) return b.notes.length;
+  }
+  if(currentChord && currentChord.notes && currentChord.notes.length) return currentChord.notes.length;
+  return currentChordSize || coreResolveChordSize();
+}
+
+
 function toggleChordPitch(note){
   if(answered||chordAutoSubmitting||!(questionMode==='chord'||questionMode==='chordseq')) return;
   markFirstInput();
@@ -4982,7 +4993,8 @@ function coreGenerateChordQuestion(){
   const size=coreResolveChordSize();
   const bundles=[];
   for(let i=0;i<len;i++) bundles.push(coreGenerateChordBundle(pool,ks,size));
-  return {mode:'chordseq',keySig:ks,clef:currentClef,bundles,index:0,results:[],chordSize:size};
+  const actualSize=(bundles[0]&&bundles[0].notes)?bundles[0].notes.length:size;
+  return {mode:'chordseq',keySig:ks,clef:currentClef,bundles,index:0,results:[],chordSize:actualSize};
 }
 
 function coreApplyQuestionToLegacy(){
@@ -5011,7 +5023,7 @@ function coreApplyQuestionToLegacy(){
     chordSequenceSelections=coreQuestion.results.map(r=>r?r.pressedKeys||[]:[]);
     currentChord=currentChordSequence[Math.min(chordSequenceIndex,currentChordSequence.length-1)]||currentChordSequence[0];
     currentNote=currentChord&&currentChord.notes?currentChord.notes[0]:null;
-    currentChordSize=coreQuestion.chordSize;
+    currentChordSize=(currentChord&&currentChord.notes&&currentChord.notes.length)||coreQuestion.chordSize;
     chordPitchSelection.clear();
     chordPitchOrder=[];
   }
@@ -5287,7 +5299,7 @@ function toggleChordPitch(note){
   }
   renderKeyboard(null);
   updateChordPanel();
-  if(chordPitchSelection.size>=coreQuestion.chordSize){
+  if(chordPitchSelection.size>=coreCurrentRequiredChordCount()){
     setTimeout(()=>submitChordAnswer(true),180);
   }
 }
@@ -5298,7 +5310,8 @@ function submitChordAnswer(autoTriggered=false){
   const bundle=coreQuestion.bundles[coreQuestion.index];
   if(!bundle) return;
   const answerSet=new Set(bundle.notes.map(n=>n.midi));
-  const selected=[...chordPitchSelection];
+  const required=bundle.notes.length;
+  const selected=chordPitchOrder.length ? chordPitchOrder.slice(0,required) : [...chordPitchSelection].slice(0,required);
   const pressedMidis=selected.map(k=>parseInt(String(k).replace(/^m/,''),10)).filter(n=>!Number.isNaN(n));
   const correct=pressedMidis.length===answerSet.size && pressedMidis.every(m=>answerSet.has(m));
   const timing=coreAttemptTiming();
@@ -5341,6 +5354,7 @@ function submitChordAnswer(autoTriggered=false){
     coreApplyQuestionToLegacy();
     currentChord=currentChordSequence[coreQuestion.index];
     currentNote=currentChord.notes[0];
+    currentChordSize=(currentChord&&currentChord.notes&&currentChord.notes.length)||currentChordSize;
     coreStartItemTiming();
     renderStaff();
     renderKeyboard(null);
