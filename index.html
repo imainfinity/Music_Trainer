@@ -2584,7 +2584,7 @@ function safeFinishChordSequence(seqLen){
   const nextBtn=document.getElementById('next-btn');
   if(shouldAutoMoveNext()){
     if(nextBtn) nextBtn.style.display='none';
-    scheduleNextQuestionAfterAnswer(timeAttackActive?350:1200);
+    scheduleNextQuestionAfterAnswer(timeAttackActive?850:1200);
   }else{
     if(nextBtn) nextBtn.style.display='block';
   }
@@ -3165,6 +3165,33 @@ function nextQuestion(){
   scheduleTipAssist();
 }
 
+
+function physicalMidiOfInput(letter){
+  // If a keyboard key was tapped, use its actual physical MIDI.
+  // This is essential for B vs B♭, C vs C♭, E vs E♭, F vs F♭ etc.
+  if(lastKeyboardPitch && typeof lastKeyboardPitch.midi==='number') return lastKeyboardPitch.midi;
+  // Fallback for note-name buttons: use the currently active octave/letter spelling.
+  const expected=(questionMode==='sequence')?sequenceCurrentNote():currentNote;
+  if(expected && expected.n===letter) return noteToMidi(expected);
+  return null;
+}
+
+function pitchMatchesExpected(letter,expected){
+  const inputMidi=physicalMidiOfInput(letter);
+  if(inputMidi!==null && expected) return inputMidi===noteToMidi(expected);
+  return expected && letter===expected.n;
+}
+
+function inputDisplayForHistory(letter,displayLabel){
+  if(lastKeyboardPitch && typeof lastKeyboardPitch.midi==='number') return pitchLabel(lastKeyboardPitch);
+  return displayLabel||letter;
+}
+
+function wrongKeyboardForInput(correct){
+  return (!correct && lastKeyboardPitch)?[lastKeyboardPitch]:[];
+}
+
+
 function selectNote(n,displayLabel=n){
   hideTipAssist();
   if(questionMode==='chord'||questionMode==='chordseq'){
@@ -3175,8 +3202,9 @@ function selectNote(n,displayLabel=n){
     const expected=sequenceCurrentNote();
     markFirstInput();
     const timing=computeAttemptTiming();
-    const correct=n===expected.n;
-    sequenceResults[sequenceIndex]={correct,answered:n,answeredLabel:displayLabel,expected};
+    const pressedLabel=inputDisplayForHistory(n,displayLabel);
+    const correct=pitchMatchesExpected(n,expected);
+    sequenceResults[sequenceIndex]={correct,answered:n,answeredLabel:pressedLabel,expected,pressedPitch:lastKeyboardPitch};
     stats.total++;
     if(correct){stats.correct++;stats.streak++;}else{stats.streak=0;}
     recordWeakPoint(expected,n,correct,'sequence');
@@ -3185,7 +3213,7 @@ function selectNote(n,displayLabel=n){
       mode:'sequence',
       no:`${sequenceIndex+1}/${currentSequence.length}`,
       expected:pitchLabel(expected),
-      pressed:displayLabel,
+      pressed:pressedLabel,
       readSec:timing.readSec,
       inputSec:timing.inputSec,
       gapSec:timing.gapSec,
@@ -3199,9 +3227,9 @@ function selectNote(n,displayLabel=n){
       clef:currentClef,
       correct,
       answered:n,
-      answeredLabel:displayLabel,
+      answeredLabel:pressedLabel,
       keySig:activeKeySig(),
-      wrongNotes:(!correct&&lastKeyboardPitch)?[lastKeyboardPitch]:[],
+      wrongNotes:wrongKeyboardForInput(correct),
       attempt:seqAttempt
     });
 
@@ -3215,7 +3243,7 @@ function selectNote(n,displayLabel=n){
     sequenceIndex++;
     currentNote=sequenceCurrentNote();
     renderStaff();
-    renderKeyboard(correct?null:expected,(!correct&&lastKeyboardPitch)?[lastKeyboardPitch]:[]);
+    renderKeyboard(expected,wrongKeyboardForInput(correct));
     updateStats();
 
     if(sequenceIndex>=currentSequence.length){
@@ -3231,7 +3259,7 @@ function selectNote(n,displayLabel=n){
       const nextBtn=document.getElementById('next-btn');
       if(shouldAutoMoveNext()){
         if(nextBtn) nextBtn.style.display='none';
-        scheduleNextQuestionAfterAnswer(timeAttackActive?350:1500);
+        scheduleNextQuestionAfterAnswer(timeAttackActive?850:1500);
       }else{
         nextBtn.style.display='block';
       }
@@ -3245,7 +3273,8 @@ function selectNote(n,displayLabel=n){
   if(answered) return;
   answered=true;
   stats.total++;
-  const correct=n===currentNote.n;
+  const pressedLabel=inputDisplayForHistory(n,displayLabel);
+  const correct=pitchMatchesExpected(n,currentNote);
   const jp=NOTE_JP[currentNote.n];
   const fb=document.getElementById('feedback');
   if(correct){
@@ -3266,11 +3295,11 @@ function selectNote(n,displayLabel=n){
       b.querySelector('.jp').textContent=NOTE_JP[currentNote.n]+' '+currentNote.o;
     }
   });
-  const wrongKeyboardNotes=(!correct&&lastKeyboardPitch)?[lastKeyboardPitch]:[];
+  const wrongKeyboardNotes=wrongKeyboardForInput(correct);
   renderKeyboard(currentNote,wrongKeyboardNotes);
   updateStats();
   // push history
-  history.unshift({note:currentNote.n,oct:currentNote.o,jp:jp,clef:currentClef,correct,answered:n,answeredLabel:displayLabel,keySig:activeKeySig(),wrongNotes:wrongKeyboardNotes});
+  history.unshift({note:currentNote.n,oct:currentNote.o,jp:jp,clef:currentClef,correct,answered:n,answeredLabel:pressedLabel,keySig:activeKeySig(),wrongNotes:wrongKeyboardNotes});
   if(history.length>10) history.pop();
   renderHistory();
   const nextBtn=document.getElementById('next-btn');
