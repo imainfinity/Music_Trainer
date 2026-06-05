@@ -5285,6 +5285,33 @@ function selectNote(n,displayLabel=n){
   }, timeAttackActive?350:650);
 }
 
+function coreScheduleChordAutoSubmitIfReady(reason=''){
+  if(!coreQuestion || coreQuestion.mode!=='chordseq' || answered) return;
+  const required=coreCurrentRequiredChordCount();
+  if(!required || chordPitchSelection.size<required) return;
+
+  const expectedIndex=coreQuestion.index;
+  if(chordAutoSubmitTimer) clearTimeout(chordAutoSubmitTimer);
+
+  const run=()=>{
+    if(!coreQuestion || coreQuestion.mode!=='chordseq' || answered) return;
+    if(coreQuestion.index!==expectedIndex) return;
+    const req=coreCurrentRequiredChordCount();
+    if(chordPitchSelection.size>=req){
+      submitChordAnswer(true);
+    }
+  };
+
+  // 2/2・3/3など必要音数に到達したら必ず自動判定する。
+  // 1回目は短め、WebView等でイベント処理が詰まった場合に備えて保険で再確認する。
+  chordAutoSubmitTimer=setTimeout(()=>{
+    chordAutoSubmitTimer=null;
+    run();
+  },70);
+
+  setTimeout(run,320);
+}
+
 function toggleChordPitch(note){
   if(!coreQuestion || coreQuestion.mode!=='chordseq' || answered || chordAutoSubmitting) return;
   coreMarkInput();
@@ -5299,13 +5326,18 @@ function toggleChordPitch(note){
   }
   renderKeyboard(null);
   updateChordPanel();
-  if(chordPitchSelection.size>=coreCurrentRequiredChordCount()){
-    setTimeout(()=>submitChordAnswer(true),180);
-  }
+
+  // ここが今回の修正点：
+  // UIが「選択: 2 / 2」になった瞬間に、現在の束の必要音数で自動判定を必ず発火させる。
+  coreScheduleChordAutoSubmitIfReady('toggleChordPitch');
 }
 
 function submitChordAnswer(autoTriggered=false){
   hideTipAssist && hideTipAssist();
+  if(chordAutoSubmitTimer){
+    clearTimeout(chordAutoSubmitTimer);
+    chordAutoSubmitTimer=null;
+  }
   if(!coreQuestion || coreQuestion.mode!=='chordseq' || answered) return;
   const bundle=coreQuestion.bundles[coreQuestion.index];
   if(!bundle) return;
