@@ -2169,6 +2169,7 @@ function coreTryAutoJudgeChordNow(){
   const required=coreCurrentRequiredChordCount();
   const selectedCount=chordPitchSelection ? chordPitchSelection.size : 0;
   if(selectedCount>=required){
+    // Old Check-button era flags must not block automatic judging.
     chordAutoSubmitting=false;
     clearTimeout(chordAutoSubmitTimer);
     chordAutoSubmitTimer=null;
@@ -2188,7 +2189,7 @@ function coreCurrentRequiredChordCount(){
 
 
 function toggleChordPitch(note){
-  if(answered||!(questionMode==='chord'||questionMode==='chordseq')) return;
+  if(answered||chordAutoSubmitting||!(questionMode==='chord'||questionMode==='chordseq')) return;
   markFirstInput();
   const key=pitchKey(note);
   if(chordPitchSelection.has(key)){
@@ -2495,7 +2496,7 @@ function generateChordQuestion(){
   const scale=buildLetterScale(rootLetter,baseOct);
   const degree=Math.floor(Math.random()*7);
   currentChordSize=resolveChordSize();
-  const voicingType=pickVoicingType();
+  const voicingType=fiveFingerMode?'close':pickVoicingType();
   const quality=getDiatonicChordQuality(degree,currentChordSize);
   const voicingLabel={close:'Close',open:'Open',wide:'Large Spread'}[voicingType]||'Mixed';
 
@@ -5024,40 +5025,76 @@ function coreGenerateMelodyQuestion(){
   return {mode:'sequence',keySig:ks,clef:currentClef,items:notes,index:0,results:[]};
 }
 
-function coreGenerateChordBundle(pool, ks, size){
+function coreGenerateChordBundle(pool, ks, size, anchorMidi=null){
+  // 5-finger mode: max span 12 semitones (one octave), anchored near previous bundle
+  const MAX_SPAN = fiveFingerMode ? 12 : 24;
+  const MAX_BUNDLE_JUMP = fiveFingerMode ? 7 : 24; // semitones between bundle roots
+
   const prog=coreProgressionPools(pool);
   const chordTones=corePick(prog.filter(x=>x.length>=Math.min(size,3)).length?prog.filter(x=>x.length>=Math.min(size,3)):prog);
   let base=[...chordTones];
   if(!base.length) base=[...pool];
 
-  // Build unique MIDI chord tones first.
-  const notes=[];
-  const seen=new Set();
-  let guard=0;
-  while(notes.length<size && guard++<80){
-    let n={...corePick(base)};
-    const lv=parseInt(difficultyLevel,10)||1;
-    if(!fiveFingerMode && lv>=5 && Math.random()<0.45) n.o += Math.random()<0.5?1:-1;
-    n=coreClampOctave(n,ks);
-    const m=coreMidiFromWritten(n,ks);
-    if(m<CORE_MIN_MIDI||m>CORE_MAX_MIDI||seen.has(m)) continue;
-    seen.add(m);
-    notes.push({...n,midi:m,label:coreNoteLabel(n,ks)});
+  // Attempt up to 20 times to build a playable chord within span limit
+  for(let attempt=0; attempt<20; attempt++){
+    const notes=[];
+    const seen=new Set();
+    let guard=0;
+    while(notes.length<size && guard++<80){
+      let n={...corePick(base)};
+      const lv=parseInt(difficultyLevel,10)||1;
+      // Only allow octave displacement in non-five-finger mode
+      if(!fiveFingerMode && lv>=5 && Math.random()<0.45) n.o += Math.random()<0.5?1:-1;
+      n=coreClampOctave(n,ks);
+      const m=coreMidiFromWritten(n,ks);
+      if(m<CORE_MIN_MIDI||m>CORE_MAX_MIDI||seen.has(m)) continue;
+      // 5-finger: reject if this note would blow span beyond 12
+      if(fiveFingerMode && notes.length>0){
+        const lo=Math.min(...notes.map(x=>x.midi),m);
+        const hi=Math.max(...notes.map(x=>x.midi),m);
+        if(hi-lo>MAX_SPAN) continue;
+      }
+      // 5-finger: keep bundle root close to previous bundle anchor
+      if(fiveFingerMode && anchorMidi!==null && notes.length===0){
+        if(Math.abs(m-anchorMidi)>MAX_BUNDLE_JUMP) continue;
+      }
+      seen.add(m);
+      notes.push({...n,midi:m,label:coreNoteLabel(n,ks)});
+    }
+    // Fallback fill from pool within span
+    guard=0;
+    while(notes.length<size && guard++<100){
+      let n={...corePick(pool)};
+      n=coreClampOctave(n,ks);
+      const m=coreMidiFromWritten(n,ks);
+      if(seen.has(m)) continue;
+      if(fiveFingerMode && notes.length>0){
+        const lo=Math.min(...notes.map(x=>x.midi),m);
+        const hi=Math.max(...notes.map(x=>x.midi),m);
+        if(hi-lo>MAX_SPAN) continue;
+      }
+      seen.add(m);
+      notes.push({...n,midi:m,label:coreNoteLabel(n,ks)});
+    }
+    if(notes.length===size){
+      const lo=Math.min(...notes.map(x=>x.midi));
+      const hi=Math.max(...notes.map(x=>x.midi));
+      if(hi-lo<=MAX_SPAN){
+        notes.sort((a,b)=>a.midi-b.midi);
+        return {notes};
+      }
+    }
   }
 
-  // Fallback fill from pool.
-  guard=0;
-  while(notes.length<size && guard++<100){
-    let n={...corePick(pool)};
-    n=coreClampOctave(n,ks);
-    const m=coreMidiFromWritten(n,ks);
-    if(seen.has(m)) continue;
-    seen.add(m);
-    notes.push({...n,midi:m,label:coreNoteLabel(n,ks)});
-  }
-
-  notes.sort((a,b)=>a.midi-b.midi);
-  return {notes};
+  // Last resort: pick consecutive semitones within one octave window
+  const sorted=pool.map(n=>({...n,midi:coreMidiFromWritten(n,ks)}))
+    .filter(n=>n.midi>=CORE_MIN_MIDI&&n.midi<=CORE_MAX_MIDI)
+    .sort((a,b)=>a.midi-b.midi);
+  const startIdx=Math.floor(Math.random()*Math.max(1,sorted.length-size));
+  const fallback=sorted.slice(startIdx,startIdx+size);
+  fallback.forEach(n=>{n.label=coreNoteLabel(n,ks);});
+  fallback.sort((a,b)=>a.midi-b.midi);
+  return {notes:fallback.length?fallback:sorted.slice(0,size)};
 }
 
 function coreGenerateChordQuestion(){
@@ -5068,7 +5105,13 @@ function coreGenerateChordQuestion(){
   const len=coreResolveSeqLen();
   const size=coreResolveChordSize();
   const bundles=[];
-  for(let i=0;i<len;i++) bundles.push(coreGenerateChordBundle(pool,ks,size));
+  let anchorMidi=null;
+  for(let i=0;i<len;i++){
+    const b=coreGenerateChordBundle(pool,ks,size,anchorMidi);
+    bundles.push(b);
+    // Next bundle anchors near this bundle's root (lowest note)
+    if(b.notes&&b.notes.length) anchorMidi=b.notes[0].midi;
+  }
   const actualSize=(bundles[0]&&bundles[0].notes)?bundles[0].notes.length:size;
   return {mode:'chordseq',keySig:ks,clef:currentClef,bundles,index:0,results:[],chordSize:actualSize};
 }
