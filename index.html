@@ -658,9 +658,11 @@ input[type="range"]{accent-color:#7DB7FF;}
 .result-section{margin-top:12px;padding:12px;border-radius:16px;background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.09);font-size:13px;line-height:1.65;color:rgba(246,241,231,.82);}
 .result-section-title{font-family:var(--mono);font-size:11px;color:#FFE2A6;letter-spacing:.08em;margin-bottom:5px;}
 .result-attempt-list{display:flex;flex-direction:column;gap:6px;max-height:220px;overflow:auto;}
-.result-attempt-row{display:grid;grid-template-columns:42px 1fr 1fr 58px 46px;gap:8px;align-items:center;padding:7px 9px;border-radius:12px;background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.08);font-family:var(--mono);font-size:11px;color:rgba(246,241,231,.82);}
+.result-attempt-row{display:grid;grid-template-columns:38px 1fr 1fr 58px 58px 42px;gap:7px;align-items:center;padding:7px 9px;border-radius:12px;background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.08);font-family:var(--mono);font-size:11px;color:rgba(246,241,231,.82);}
 .result-attempt-row.ok{border-color:rgba(83,212,140,.25);background:rgba(83,212,140,.08);}
 .result-attempt-row.ng{border-color:rgba(255,107,118,.25);background:rgba(255,107,118,.08);}
+.result-attempt-row.slow-read{box-shadow:inset 3px 0 0 rgba(247,185,85,.75);}
+.result-attempt-row.slow-input{box-shadow:inset 3px 0 0 rgba(255,138,85,.78);}
 .result-attempt-row.slow{box-shadow:inset 3px 0 0 rgba(247,185,85,.75);}
 .result-attempt-head{color:rgba(246,241,231,.46);font-size:10px;}
 .result-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;}
@@ -997,6 +999,8 @@ input[type="range"]{accent-color:#7DB7FF;}
           <input id="time-duration-range" class="time-duration-range" type="range" min="60" max="600" step="30" value="180" oninput="setTimeAttackDuration(this.value)">
           <div class="time-duration-scale"><span>60s</span><span>10min</span></div>
           <div class="time-attack-actions">
+            <button class="challenge-btn primary active" id="mode-jikkuri-btn" onclick="setTrainingMode('jikkuri')">じっくり</button>
+            <button class="challenge-btn" id="mode-time-btn" onclick="setTrainingMode('time')">タイム</button>
             <button class="challenge-btn primary" id="time-attack-start-btn" onclick="toggleTimeAttack()">START</button>
             <button class="challenge-btn" onclick="showPracticeDiagnostic()">診断 / CHECK</button>
             <button class="challenge-btn" onclick="toggleLogView()">LOG</button>
@@ -1130,7 +1134,7 @@ input[type="range"]{accent-color:#7DB7FF;}
     <div class="result-section">
       <div class="result-section-title">打鍵履歴 / KEYSTROKE REVIEW</div>
       <div class="result-attempt-list" id="result-attempt-list">
-        <div class="result-attempt-row result-attempt-head"><span>No.</span><span>Answer</span><span>Pressed</span><span>Time</span><span>Result</span></div>
+        <div class="result-attempt-row result-attempt-head"><span>No.</span><span>Answer</span><span>Pressed</span><span>Read</span><span>Input</span><span>Result</span></div>
       </div>
     </div>
     <div class="result-actions">
@@ -1246,6 +1250,8 @@ let sessionAttemptLog=[];
 let challengeStartAttemptIndex=0;
 let questionStartedAt=0;
 let currentBundleStartedAt=0;
+let currentAttemptFirstInputAt=0;
+let trainingMode='jikkuri';
 let tipAssistTimer=null;
 let tipAssistShown=false;
 let chordSize=2;
@@ -1978,6 +1984,7 @@ function scheduleChordAutoSubmit(){
 
 function toggleChordPitch(note){
   if(answered||chordAutoSubmitting||!(questionMode==='chord'||questionMode==='chordseq')) return;
+  markFirstInput();
   const key=pitchKey(note);
   if(chordPitchSelection.has(key)){
     chordPitchSelection.delete(key);
@@ -2372,7 +2379,7 @@ function updatePracticeSummary(){
   }
   const logSummary=document.getElementById('practice-log-summary');
   const oldStatus=document.getElementById('challenge-status');
-  if(logSummary&&oldStatus) logSummary.textContent=oldStatus.textContent+' / 難易度 Lv.'+difficultyLevel;
+  if(logSummary&&oldStatus) logSummary.textContent=(trainingMode==='jikkuri'?'じっくり':'タイム')+' / '+oldStatus.textContent+' / 難易度 Lv.'+difficultyLevel;
 }
 
 function updateChordPanel(){
@@ -2487,6 +2494,7 @@ function submitChordAnswer(autoTriggered=false){
       const saved=[...chordPitchSelection];
       chordSequenceSelections[idx]=saved;
 
+      const timing=computeAttemptTiming();
       let bundleResult;
       try{
         bundleResult=gradeChordSeqSelection(currentChord,saved);
@@ -2504,7 +2512,9 @@ function submitChordAnswer(autoTriggered=false){
         no:`${idx+1}/${seqLen}`,
         expected:(currentChord.notes||[]).map(pitchLabel).join('・'),
         pressed:formatChordSelection(saved),
-        elapsedSec:elapsedFrom(currentBundleStartedAt||questionStartedAt),
+        readSec:timing.readSec,
+        inputSec:timing.inputSec,
+        elapsedSec:timing.totalSec,
         correct:bundleResult.correct
       });
       addAttemptHistory({
@@ -2851,6 +2861,41 @@ function updateChordSequenceFeedback(){
   }
 }
 
+
+const SCALE_DEGREES=['C','D','E','F','G','A','B'];
+function buildProgressionTonePool(basePool,len){
+  const ks=activeKeySig();
+  const roots=['C','F','G','A','D','E'];
+  const patterns=[
+    ['C','E','G'],['G','B','D'],['A','C','E'],['F','A','C'],
+    ['D','F','A'],['G','B','D'],['C','E','G']
+  ];
+  const out=[];
+  for(let i=0;i<len;i++){
+    const chord=patterns[i%patterns.length];
+    let chordPool=basePool.filter(n=>chord.includes(n.n));
+    if(!chordPool.length) chordPool=basePool;
+    out.push(chordPool);
+  }
+  return out;
+}
+function pickMelodyNext(options,last,level){
+  if(!options||!options.length) return last;
+  const jumpChance=Math.min(.18 + level*.045, .58);
+  const weighted=options.map(n=>{
+    const d=Math.abs(diatonicStep(n)-diatonicStep(last));
+    let w=1;
+    if(d<=2) w+=2.2;
+    if(d>=4&&d<=7) w+=jumpChance*5;
+    if(d>=8) w+=jumpChance*2.4;
+    return {n,w};
+  });
+  const total=weighted.reduce((s,x)=>s+x.w,0);
+  let r=Math.random()*total;
+  for(const item of weighted){ r-=item.w; if(r<=0) return item.n; }
+  return weighted[weighted.length-1].n;
+}
+
 function generateSequenceQuestion(){
   const pool=trainingPoolForClef(currentClef)
     .slice()
@@ -2872,24 +2917,28 @@ function generateSequenceQuestion(){
       if(group.length>=5) windows.push(group.sort((a,b)=>diatonicStep(a)-diatonicStep(b)));
     }
     const baseWindow=windows.length?windows[Math.floor(Math.random()*windows.length)]:pool;
+    const progressionPools=buildProgressionTonePool(baseWindow,len);
     const seq=[];
     let last=baseWindow[Math.floor(Math.random()*baseWindow.length)];
     for(let i=0;i<len;i++){
-      const options=baseWindow.filter(n=>{
+      let options=progressionPools[i].filter(n=>{
         const jump=Math.abs(diatonicStep(n)-diatonicStep(last));
-        return jump<=5;
+        return difficultyLevel>=4 ? jump<=7 : jump<=5;
       });
-      last=options[Math.floor(Math.random()*options.length)];
+      if(!options.length) options=baseWindow;
+      last=pickMelodyNext(options,last,difficultyLevel);
       seq.push({...last});
     }
     return seq;
   }
 
   const seq=[];
+  const progressionPools=buildProgressionTonePool(pool,len);
   let last=pool[Math.floor(Math.random()*pool.length)];
   for(let i=0;i<len;i++){
-    const options=pool.filter(n=>Math.abs(diatonicStep(n)-diatonicStep(last))<=8);
-    last=options[Math.floor(Math.random()*options.length)];
+    let options=progressionPools[i].filter(n=>Math.abs(diatonicStep(n)-diatonicStep(last))<= (difficultyLevel>=6?12:8));
+    if(!options.length) options=pool.filter(n=>Math.abs(diatonicStep(n)-diatonicStep(last))<=8);
+    last=pickMelodyNext(options,last,difficultyLevel);
     seq.push({...last});
   }
   return seq;
@@ -3005,6 +3054,8 @@ function selectNote(n,displayLabel=n){
   if(questionMode==='sequence'){
     if(answered) return;
     const expected=sequenceCurrentNote();
+    markFirstInput();
+    const timing=computeAttemptTiming();
     const correct=n===expected.n;
     sequenceResults[sequenceIndex]={correct,answered:n,answeredLabel:displayLabel,expected};
     stats.total++;
@@ -3016,7 +3067,9 @@ function selectNote(n,displayLabel=n){
       no:`${sequenceIndex+1}/${currentSequence.length}`,
       expected:pitchLabel(expected),
       pressed:displayLabel,
-      elapsedSec:elapsedFrom(sequenceIndex===0?questionStartedAt:currentBundleStartedAt),
+      readSec:timing.readSec,
+      inputSec:timing.inputSec,
+      elapsedSec:timing.totalSec,
       correct
     });
     addAttemptHistory({
@@ -3209,12 +3262,13 @@ function renderHistory(){
       const bg=a.correct?'rgba(83,212,140,.10)':'rgba(255,107,118,.12)';
       const border=a.correct?'rgba(83,212,140,.28)':'rgba(255,107,118,.30)';
       const icon=a.correct?'✓':'✗';
-      row.style.cssText=`display:grid;grid-template-columns:28px 1fr 1fr 52px 28px;gap:8px;align-items:center;padding:8px 10px;`
+      row.style.cssText=`display:grid;grid-template-columns:28px 1fr 1fr 48px 48px 28px;gap:7px;align-items:center;padding:8px 10px;`
         +`background:${bg};border:1px solid ${border};border-radius:12px;font-family:'DM Mono',monospace;color:rgba(246,241,231,.86);`;
       row.innerHTML=`<span style="font-size:10px;color:rgba(246,241,231,.46);">${i+1}</span>`
         +`<span style="font-size:12px;">正解 ${a.expected||'—'}</span>`
         +`<span style="font-size:12px;">押下 ${a.pressed||'—'}</span>`
-        +`<span style="font-size:11px;color:${a.slow?'#FFE2A6':'rgba(246,241,231,.62)'};">${formatAttemptTime(a.elapsedSec)}</span>`
+        +`<span style="font-size:11px;color:${a.slowRead?'#FFE2A6':'rgba(246,241,231,.62)'};">R ${formatAttemptTime(a.readSec)}</span>`
+        +`<span style="font-size:11px;color:${a.slowInput?'#FFBA8A':'rgba(246,241,231,.62)'};">I ${formatAttemptTime(a.inputSec)}</span>`
         +`<span style="font-size:14px;font-weight:700;color:${a.correct?'#78F0A9':'#FF8D95'};">${icon}</span>`;
       list.appendChild(row);
     });
@@ -3230,7 +3284,7 @@ function renderHistory(){
     const clefLabel=h.clef==='treble'?'T':'B';
     const clefColor=h.clef==='treble'?'#7DB7FF':'#B58CFF';
     const row=document.createElement('div');
-    row.style.cssText=`display:grid;grid-template-columns:22px 28px minmax(64px,.8fr) 1.2fr 52px auto;align-items:center;gap:8px;padding:8px 10px;`
+    row.style.cssText=`display:grid;grid-template-columns:22px 28px minmax(64px,.8fr) 1.2fr 48px 48px auto;align-items:center;gap:7px;padding:8px 10px;`
       +`background:${bg};border:1px solid ${border};border-radius:12px;font-family:'DM Mono',monospace;`
       +`cursor:pointer;transition:opacity .1s;color:rgba(246,241,231,.86);`;
     row.title='タップして五線・鍵盤を確認';
@@ -3256,10 +3310,13 @@ function renderHistory(){
     pressed.style.cssText=`font-size:11px;color:${h.correct?'rgba(120,240,169,.90)':'#FFB6BC'};white-space:nowrap;`;
     pressed.textContent=h.correct?icon:`${icon} 押下: ${h.answeredLabel||h.answered}`;
 
-    const tm=document.createElement('span');
-    tm.style.cssText=`font-size:11px;color:${h.attempt&&h.attempt.slow?'#FFE2A6':'rgba(246,241,231,.62)'};white-space:nowrap;`;
-    tm.textContent=h.attempt?formatAttemptTime(h.attempt.elapsedSec):'—';
-    row.appendChild(idx);row.appendChild(cb);row.appendChild(note);row.appendChild(jp);row.appendChild(tm);row.appendChild(pressed);
+    const readTm=document.createElement('span');
+    readTm.style.cssText=`font-size:11px;color:${h.attempt&&h.attempt.slowRead?'#FFE2A6':'rgba(246,241,231,.62)'};white-space:nowrap;`;
+    readTm.textContent=h.attempt?'R '+formatAttemptTime(h.attempt.readSec):'R —';
+    const inputTm=document.createElement('span');
+    inputTm.style.cssText=`font-size:11px;color:${h.attempt&&h.attempt.slowInput?'#FFBA8A':'rgba(246,241,231,.62)'};white-space:nowrap;`;
+    inputTm.textContent=h.attempt?'I '+formatAttemptTime(h.attempt.inputSec):'I —';
+    row.appendChild(idx);row.appendChild(cb);row.appendChild(note);row.appendChild(jp);row.appendChild(readTm);row.appendChild(inputTm);row.appendChild(pressed);
     list.appendChild(row);
   });
 }
@@ -3779,15 +3836,31 @@ function attemptAnswerLabelFromKeys(keys){
 function resetQuestionTiming(){
   questionStartedAt=performance.now();
   currentBundleStartedAt=questionStartedAt;
+  currentAttemptFirstInputAt=0;
 }
 
 function startBundleTiming(){
   currentBundleStartedAt=performance.now();
+  currentAttemptFirstInputAt=0;
+}
+
+function markFirstInput(){
+  if(!currentAttemptFirstInputAt) currentAttemptFirstInputAt=performance.now();
 }
 
 function elapsedFrom(start){
   if(!start) return null;
   return Math.max(0,Math.round((performance.now()-start)/100)/10);
+}
+
+function computeAttemptTiming(){
+  const now=performance.now();
+  const start=currentBundleStartedAt||questionStartedAt||now;
+  const first=currentAttemptFirstInputAt||now;
+  const readSec=Math.max(0,Math.round((first-start)/100)/10);
+  const inputSec=Math.max(0,Math.round((now-first)/100)/10);
+  const totalSec=Math.max(0,Math.round((now-start)/100)/10);
+  return {readSec,inputSec,totalSec};
 }
 
 function formatAttemptTime(sec){
@@ -3800,6 +3873,14 @@ function slowAttemptThreshold(){
   return difficultyLevel>=7?1.8:2.5;
 }
 
+function isSlowRead(sec){
+  const limit=questionMode==='chordseq'?(difficultyLevel>=7?2.2:3.0):(difficultyLevel>=7?1.2:1.8);
+  return typeof sec==='number' && sec>=limit;
+}
+function isSlowInput(sec){
+  const limit=questionMode==='chordseq'?(difficultyLevel>=7?2.0:2.8):0.8;
+  return typeof sec==='number' && sec>=limit;
+}
 function isSlowAttempt(sec){
   return typeof sec==='number' && sec>=slowAttemptThreshold();
 }
@@ -3813,8 +3894,12 @@ function addSessionAttempt(entry){
     no:entry.no||'',
     expected:entry.expected||'—',
     pressed:entry.pressed||'—',
+    readSec:entry.readSec,
+    inputSec:entry.inputSec,
     elapsedSec:entry.elapsedSec,
-    slow:isSlowAttempt(entry.elapsedSec),
+    slowRead:isSlowRead(entry.readSec),
+    slowInput:isSlowInput(entry.inputSec),
+    slow:isSlowAttempt(entry.elapsedSec)||isSlowRead(entry.readSec)||isSlowInput(entry.inputSec),
     correct:!!entry.correct,
     difficultyLevel:entry.difficultyLevel||difficultyLevel
   };
@@ -3842,11 +3927,11 @@ function renderResultAttemptList(attempts){
   if(!box) return;
   const rows=(attempts||[]).slice(-60);
   if(!rows.length){
-    box.innerHTML='<div class="result-attempt-row result-attempt-head"><span>—</span><span>まだ打鍵履歴がありません</span><span>—</span><span>—</span><span>—</span></div>';
+    box.innerHTML='<div class="result-attempt-row result-attempt-head"><span>—</span><span>まだ打鍵履歴がありません</span><span>—</span><span>—</span><span>—</span><span>—</span></div>';
     return;
   }
-  box.innerHTML='<div class="result-attempt-row result-attempt-head"><span>No.</span><span>正解</span><span>押した音</span><span>時間</span><span>結果</span></div>'
-    + rows.map((a,i)=>`<div class="result-attempt-row ${a.correct?'ok':'ng'} ${a.slow?'slow':''}"><span>${a.no||i+1}</span><span>${a.expected||'—'}</span><span>${a.pressed||'—'}</span><span>${formatAttemptTime(a.elapsedSec)}</span><span>${a.correct?'✓':'✗'}</span></div>`).join('');
+  box.innerHTML='<div class="result-attempt-row result-attempt-head"><span>No.</span><span>正解</span><span>押した音</span><span>読譜</span><span>入力</span><span>結果</span></div>'
+    + rows.map((a,i)=>`<div class="result-attempt-row ${a.correct?'ok':'ng'} ${a.slowRead?'slow-read':''} ${a.slowInput?'slow-input':''}"><span>${a.no||i+1}</span><span>${a.expected||'—'}</span><span>${a.pressed||'—'}</span><span>${formatAttemptTime(a.readSec)}</span><span>${formatAttemptTime(a.inputSec)}</span><span>${a.correct?'✓':'✗'}</span></div>`).join('');
 }
 
 function openDailyLog(index){
@@ -3864,6 +3949,23 @@ function todayKey(){
 function getDailyLogs(){try{return JSON.parse(localStorage.getItem('musicTrainerDailyLogs')||'[]');}catch(e){return [];}}
 function setDailyLogs(logs){localStorage.setItem('musicTrainerDailyLogs',JSON.stringify(logs.slice(0,365)));}
 
+
+function setTrainingMode(mode){
+  trainingMode=(mode==='time')?'time':'jikkuri';
+  localStorage.setItem('musicTrainerTrainingMode',trainingMode);
+  const jb=document.getElementById('mode-jikkuri-btn');
+  const tb=document.getElementById('mode-time-btn');
+  if(jb) jb.classList.toggle('active',trainingMode==='jikkuri');
+  if(tb) tb.classList.toggle('active',trainingMode==='time');
+  const startBtn=document.getElementById('time-attack-start-btn');
+  if(startBtn) startBtn.style.display=trainingMode==='time'?'':'none';
+  updateChallengeStatus();
+}
+function initTrainingMode(){
+  setTrainingMode(localStorage.getItem('musicTrainerTrainingMode')||'jikkuri');
+}
+
+
 function setTimeAttackDuration(sec){
   timeAttackDurationSec=Math.max(60,Math.min(600,parseInt(sec,10)||180));
   localStorage.setItem('musicTrainerTimeAttackDuration',String(timeAttackDurationSec));
@@ -3878,6 +3980,7 @@ function initTimeAttackDuration(){
 }
 
 function toggleTimeAttack(){
+  setTrainingMode('time');
   if(timeAttackActive){
     stopChallengeTimer();
   }else{
@@ -3931,10 +4034,13 @@ function buildResultAdvice(record){
   const weak=getWeakPointSummary();
   let improve='弱点データは蓄積中です。';
   const attempts=(record.attempts||[]);
-  const slowest=attempts.slice().sort((a,b)=>(b.elapsedSec||0)-(a.elapsedSec||0))[0];
-  const slowCount=attempts.filter(a=>a.slow).length;
-  if(slowest&&slowest.elapsedSec){
-    improve=`最も時間がかかった箇所: ${slowest.no||''} / ${slowest.expected||'—'} → ${formatAttemptTime(slowest.elapsedSec)}${slowCount?` / 迷い ${slowCount}件`:''}`;
+  const slowRead=attempts.slice().sort((a,b)=>(b.readSec||0)-(a.readSec||0))[0];
+  const slowInput=attempts.slice().sort((a,b)=>(b.inputSec||0)-(a.inputSec||0))[0];
+  const slowCount=attempts.filter(a=>a.slowRead||a.slowInput).length;
+  if((slowRead&&slowRead.readSec)||(slowInput&&slowInput.inputSec)){
+    const readText=slowRead&&slowRead.readSec?`読譜: ${slowRead.no||''} / ${slowRead.expected||'—'} ${formatAttemptTime(slowRead.readSec)}`:'';
+    const inputText=slowInput&&slowInput.inputSec?`入力: ${slowInput.no||''} / ${slowInput.expected||'—'} ${formatAttemptTime(slowInput.inputSec)}`:'';
+    improve=`${[readText,inputText].filter(Boolean).join(' / ')}${slowCount?` / 迷い ${slowCount}件`:''}`;
   }else if(weak && !weak.includes('蓄積中')) improve=weak.replace('Weak point:','');
   let advice='まずは譜面を見てから鍵盤に降りるまでの時間を短くしましょう。';
   if(record.total===0){
@@ -3949,7 +4055,7 @@ function buildResultAdvice(record){
     advice='まだ速度を上げる段階ではありません。5問・低めの難易度で、押す前に音名を頭の中で言う練習に戻してください。';
   }
   if(questionMode==='chordseq') advice += ' 重音は一番低い音を先に決めると、束全体の位置が安定します。';
-  if(record.attempts&&record.attempts.some(a=>a.slow)) advice += ' 黄色マークの行は、正解でも譜読みに時間がかかった箇所です。次回はその音域だけをゆっくり確認してください。';
+  if(record.attempts&&record.attempts.some(a=>a.slow)) advice += ' 黄色マークの行は読譜、橙マークの行は入力に時間がかかった箇所です。次回はその音域だけをゆっくり確認してください。';
   return {improve,advice};
 }
 
@@ -4407,6 +4513,7 @@ function initApp(){
   initSequenceLength();
   initDifficultyLevel();
   initTimeAttackDuration();
+  initTrainingMode();
   initChallengeLog();
   initKeyboardScrollRail();
   initMobilePracticeMode();
