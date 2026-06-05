@@ -2679,6 +2679,65 @@ function safeFinishChordSequence(seqLen){
 }
 
 
+
+function coreAdvanceToNextChordBundleSafe(){
+  try{
+    reviewingIdx=null;
+    chordPitchSelection.clear();
+    chordPitchOrder=[];
+    chordAutoSubmitting=false;
+
+    if(!coreQuestion || coreQuestion.mode!=='chordseq'){
+      nextQuestion();
+      return;
+    }
+
+    if(coreQuestion.index>=coreQuestion.bundles.length){
+      coreFinishSet();
+      return;
+    }
+
+    coreApplyQuestionToLegacy();
+    currentChord=currentChordSequence[coreQuestion.index];
+    if(!currentChord || !currentChord.notes || !currentChord.notes.length){
+      throw new Error('No current chord after advance');
+    }
+    currentNote=currentChord.notes[0];
+    currentChordSize=currentChord.notes.length;
+    keyboardAutoPositionPending=true;
+    coreStartItemTiming();
+
+    const clefJP=currentClef==='treble'?'ト音記号':'ヘ音記号';
+    const label=document.getElementById('clef-label');
+    if(label) label.textContent=(currentClef==='treble'?'TREBLE CLEF':'BASS CLEF')+' — '+clefJP+' / CHORD SEQ / '+activeKeySig().label;
+
+    renderStaff();
+    renderKeyboard(null);
+    updateChordPanel();
+    updateChordCheckDock();
+    updateKeyboardScrollRail && updateKeyboardScrollRail();
+
+    const fb=document.getElementById('feedback');
+    if(fb){
+      fb.textContent=`重音連続 ${coreQuestion.index+1}/${coreQuestion.bundles.length} — 必要音数で即時自動判定`;
+      fb.className='feedback-bar wait';
+    }
+    scheduleTipAssist && scheduleTipAssist();
+  }catch(err){
+    console.error('coreAdvanceToNextChordBundleSafe failed:',err);
+    reviewingIdx=null;
+    chordPitchSelection.clear();
+    chordPitchOrder=[];
+    const fb=document.getElementById('feedback');
+    if(fb){
+      fb.textContent='進行処理を復旧して次の問題へ進みます';
+      fb.className='feedback-bar ng';
+    }
+    setTimeout(()=>nextQuestion(),300);
+  }
+}
+
+
 function submitChordAnswer(autoTriggered=false){
   hideTipAssist();
   const now=Date.now();
@@ -5148,6 +5207,7 @@ function coreRecordAttempt(result){
 }
 
 function coreFinishSet(){
+  reviewingIdx=null;
   answered=true;
   const total=coreQuestion.mode==='sequence'?coreQuestion.items.length:coreQuestion.bundles.length;
   const ok=coreQuestion.results.filter(r=>r&&r.correct).length;
@@ -5281,6 +5341,9 @@ function selectNote(n,displayLabel=n){
     fb.className=correct?'feedback-bar ok':'feedback-bar ng';
   }
   renderStaff();
+  const clefJPNow=currentClef==='treble'?'ト音記号':'ヘ音記号';
+  const labelNow=document.getElementById('clef-label');
+  if(labelNow) labelNow.textContent=(currentClef==='treble'?'TREBLE CLEF':'BASS CLEF')+' — '+clefJPNow+' / CHORD SEQ / '+activeKeySig().label;
 
   coreQuestion.index++;
   if(coreQuestion.index>=coreQuestion.items.length){
@@ -5322,6 +5385,7 @@ function submitChordAnswer(autoTriggered=false){
   // This function is now the automatic judge. It must not depend on the old Check button state.
   chordAutoSubmitting=false;
   if(!coreQuestion || coreQuestion.mode!=='chordseq' || answered) return;
+  reviewingIdx=null;
   const bundle=coreQuestion.bundles[coreQuestion.index];
   if(!bundle) return;
   const answerSet=new Set(bundle.notes.map(n=>n.midi));
@@ -5363,21 +5427,7 @@ function submitChordAnswer(autoTriggered=false){
     return;
   }
 
-  setTimeout(()=>{
-    chordPitchSelection.clear();
-    chordPitchOrder=[];
-    coreApplyQuestionToLegacy();
-    currentChord=currentChordSequence[coreQuestion.index];
-    currentNote=currentChord.notes[0];
-    currentChordSize=(currentChord&&currentChord.notes&&currentChord.notes.length)||currentChordSize;
-    coreStartItemTiming();
-    renderStaff();
-    renderKeyboard(null);
-    updateChordPanel();
-    updateChordCheckDock();
-    if(fb){fb.textContent=`重音連続 ${coreQuestion.index+1}/${coreQuestion.bundles.length} — 必要音数を選ぶと自動判定`;fb.className='feedback-bar wait';}
-    scheduleTipAssist && scheduleTipAssist();
-  }, timeAttackActive?450:750);
+  setTimeout(()=>coreAdvanceToNextChordBundleSafe(), timeAttackActive?650:900);
 }
 
 function reviewHistory(i){
