@@ -657,6 +657,11 @@ input[type="range"]{accent-color:#7DB7FF;}
 .result-kpi span{display:block;margin-top:3px;font-size:10px;color:rgba(246,241,231,.46);font-family:var(--mono);letter-spacing:.05em;}
 .result-section{margin-top:12px;padding:12px;border-radius:16px;background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.09);font-size:13px;line-height:1.65;color:rgba(246,241,231,.82);}
 .result-section-title{font-family:var(--mono);font-size:11px;color:#FFE2A6;letter-spacing:.08em;margin-bottom:5px;}
+.result-attempt-list{display:flex;flex-direction:column;gap:6px;max-height:220px;overflow:auto;}
+.result-attempt-row{display:grid;grid-template-columns:42px 1fr 1fr 46px;gap:8px;align-items:center;padding:7px 9px;border-radius:12px;background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.08);font-family:var(--mono);font-size:11px;color:rgba(246,241,231,.82);}
+.result-attempt-row.ok{border-color:rgba(83,212,140,.25);background:rgba(83,212,140,.08);}
+.result-attempt-row.ng{border-color:rgba(255,107,118,.25);background:rgba(255,107,118,.08);}
+.result-attempt-head{color:rgba(246,241,231,.46);font-size:10px;}
 .result-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;}
 .result-actions button{flex:1;min-width:130px;border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:12px 14px;font-family:var(--mono);font-weight:700;cursor:pointer;color:#fff;background:rgba(255,255,255,.09);}
 .result-actions button.primary{background:linear-gradient(135deg,#4777FF,#7D5DFF);box-shadow:0 14px 34px rgba(71,119,255,.22);}
@@ -1121,6 +1126,12 @@ input[type="range"]{accent-color:#7DB7FF;}
       <div class="result-section-title">ADVICE</div>
       <div id="result-advice">練習結果を確認します。</div>
     </div>
+    <div class="result-section">
+      <div class="result-section-title">打鍵履歴 / KEYSTROKE REVIEW</div>
+      <div class="result-attempt-list" id="result-attempt-list">
+        <div class="result-attempt-row result-attempt-head"><span>No.</span><span>Answer</span><span>Pressed</span><span>Result</span></div>
+      </div>
+    </div>
     <div class="result-actions">
       <button class="primary" id="result-save-btn" onclick="savePendingResultAndClose()">SAVE</button>
       <button class="secondary" onclick="closeResultModal(true)">保存しないで戻る</button>
@@ -1230,6 +1241,8 @@ let currentSequenceTargetLength=5;
 let timeAttackDurationSec=180;
 let pendingResultRecord=null;
 let timeAttackActive=false;
+let sessionAttemptLog=[];
+let challengeStartAttemptIndex=0;
 let tipAssistTimer=null;
 let tipAssistShown=false;
 let chordSize=2;
@@ -2427,6 +2440,33 @@ function submitChordAnswer(autoTriggered=false){
       }
       chordSequenceResults[idx]=bundleResult;
 
+      const chordAttempt=addSessionAttempt({
+        mode:'chordseq',
+        no:`${idx+1}/${seqLen}`,
+        expected:(currentChord.notes||[]).map(pitchLabel).join('・'),
+        pressed:formatChordSelection(saved),
+        correct:bundleResult.correct
+      });
+      addAttemptHistory({
+        chord:true,
+        chordseqBundle:true,
+        label:`Bundle ${idx+1}`,
+        note:'Chord',
+        oct:'',
+        jp:(currentChord.notes||[]).map(pitchLabel).join('・'),
+        clef:currentClef,
+        correct:bundleResult.correct,
+        answered:saved.join('・')||'—',
+        answeredLabel:formatChordSelection(saved),
+        keySig:activeKeySig(),
+        notes:currentChord.notes||[],
+        letters:[...new Set((currentChord.notes||[]).map(n=>n.n))],
+        wrongNotes:bundleResult.wrongPitchNotes||[],
+        voicingType:currentChord.voicingType,
+        voicingLabel:currentChord.voicingLabel,
+        attempt:chordAttempt
+      });
+
       // Count this bundle once.
       stats.total++;
       if(bundleResult.correct){ stats.correct++; stats.streak++; }
@@ -2936,6 +2976,26 @@ function selectNote(n,displayLabel=n){
     stats.total++;
     if(correct){stats.correct++;stats.streak++;}else{stats.streak=0;}
     recordWeakPoint(expected,n,correct,'sequence');
+
+    const seqAttempt=addSessionAttempt({
+      mode:'sequence',
+      no:`${sequenceIndex+1}/${currentSequence.length}`,
+      expected:pitchLabel(expected),
+      pressed:displayLabel,
+      correct
+    });
+    addAttemptHistory({
+      note:expected.n,
+      oct:expected.o,
+      jp:NOTE_JP[expected.n],
+      clef:currentClef,
+      correct,
+      answered:n,
+      answeredLabel:displayLabel,
+      keySig:activeKeySig(),
+      wrongNotes:(!correct&&lastKeyboardPitch)?[lastKeyboardPitch]:[],
+      attempt:seqAttempt
+    });
 
     document.querySelectorAll('.note-btn').forEach(b=>{
       const en=b.querySelector('.en').textContent;
@@ -3654,6 +3714,62 @@ function renderKeyboard(answerNote,wrongNote=[]){
 }
 
 
+
+function attemptAnswerLabelFromKeys(keys){
+  return (keys||[]).map(k=>pitchLabel(parsePitchKey(k))).join('・')||'—';
+}
+
+function addSessionAttempt(entry){
+  const item={
+    at:new Date().toISOString(),
+    mode:entry.mode||questionMode,
+    clef:entry.clef||currentClef,
+    key:(entry.key||activeKeySig().label),
+    no:entry.no||'',
+    expected:entry.expected||'—',
+    pressed:entry.pressed||'—',
+    correct:!!entry.correct,
+    difficultyLevel:entry.difficultyLevel||difficultyLevel
+  };
+  sessionAttemptLog.push(item);
+  if(sessionAttemptLog.length>500) sessionAttemptLog=sessionAttemptLog.slice(-500);
+  return item;
+}
+
+function addAttemptHistory(entry){
+  history.unshift(entry);
+  if(history.length>30) history.pop();
+  renderHistory();
+}
+
+function getAttemptsSinceChallengeStart(){
+  return sessionAttemptLog.slice(challengeStartAttemptIndex);
+}
+
+function getRecentPracticeAttempts(limit=40){
+  return sessionAttemptLog.slice(-limit);
+}
+
+function renderResultAttemptList(attempts){
+  const box=document.getElementById('result-attempt-list');
+  if(!box) return;
+  const rows=(attempts||[]).slice(-60);
+  if(!rows.length){
+    box.innerHTML='<div class="result-attempt-row result-attempt-head"><span>—</span><span>まだ打鍵履歴がありません</span><span>—</span><span>—</span></div>';
+    return;
+  }
+  box.innerHTML='<div class="result-attempt-row result-attempt-head"><span>No.</span><span>正解</span><span>押した音</span><span>結果</span></div>'
+    + rows.map((a,i)=>`<div class="result-attempt-row ${a.correct?'ok':'ng'}"><span>${a.no||i+1}</span><span>${a.expected||'—'}</span><span>${a.pressed||'—'}</span><span>${a.correct?'✓':'✗'}</span></div>`).join('');
+}
+
+function openDailyLog(index){
+  const logs=getDailyLogs();
+  const record=logs[index];
+  if(!record) return;
+  showResultModal(record,{title:'Saved Log Review',allowSave:false});
+}
+
+
 function todayKey(){
   const d=new Date();
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -3765,6 +3881,7 @@ function showResultModal(record,opts={}){
   const a=buildResultAdvice(record);
   if(improve) improve.textContent=a.improve;
   if(advice) advice.textContent=a.advice;
+  renderResultAttemptList(record.attempts||[]);
   if(saveBtn) saveBtn.style.display=opts.allowSave===false?'none':'';
   modal.classList.add('show');
 }
@@ -3785,7 +3902,7 @@ function savePendingResultAndClose(){
 }
 
 function showPracticeDiagnostic(){
-  const record={date:todayKey(),endedAt:new Date().toISOString(),durationSec:0,mode:questionMode,clefMode,key:activeKeySig().label,seqLen:questionMode==='sequence'?currentSequenceTargetLength:currentChordSequence.length,correct:stats.correct,total:stats.total,accuracy:stats.total?Math.round(stats.correct/stats.total*100):0,difficultyLevel};
+  const record={date:todayKey(),endedAt:new Date().toISOString(),durationSec:0,mode:questionMode,clefMode,key:activeKeySig().label,seqLen:questionMode==='sequence'?currentSequenceTargetLength:currentChordSequence.length,correct:stats.correct,total:stats.total,accuracy:stats.total?Math.round(stats.correct/stats.total*100):0,difficultyLevel,attempts:getRecentPracticeAttempts()};
   showResultModal(record,{title:'Practice Check',allowSave:true});
 }
 
@@ -3893,6 +4010,7 @@ function startChallengeTimer(sec){
   challengeDurationSec=sec;
   challengeEndAt=Date.now()+sec*1000;
   challengeStartStats={correct:stats.correct,total:stats.total,streak:stats.streak,startedAt:new Date().toISOString()};
+  challengeStartAttemptIndex=sessionAttemptLog.length;
   clearInterval(challengeTimer);
   clearTimeout(challengeTimeout);
   clearTimeout(autoTimer);
@@ -3923,10 +4041,10 @@ function finishChallengeTimer(){
   const start=challengeStartStats||{correct:0,total:0,startedAt:new Date().toISOString()};
   const deltaTotal=Math.max(0,stats.total-start.total);
   const deltaCorrect=Math.max(0,stats.correct-start.correct);
-  const record={date:todayKey(),endedAt:new Date().toISOString(),durationSec:challengeDurationSec,mode:questionMode,clefMode,key:activeKeySig().label,seqLen:questionMode==='sequence'?currentSequenceTargetLength:(currentChordSequence.length||currentSequenceTargetLength),correct:deltaCorrect,total:deltaTotal,accuracy:deltaTotal?Math.round(deltaCorrect/deltaTotal*100):0,difficultyLevel};
+  const record={date:todayKey(),endedAt:new Date().toISOString(),durationSec:challengeDurationSec,mode:questionMode,clefMode,key:activeKeySig().label,seqLen:questionMode==='sequence'?currentSequenceTargetLength:(currentChordSequence.length||currentSequenceTargetLength),correct:deltaCorrect,total:deltaTotal,accuracy:deltaTotal?Math.round(deltaCorrect/deltaTotal*100):0,difficultyLevel,attempts:getAttemptsSinceChallengeStart()};
   challengeEndAt=0;challengeStartStats=null;timeAttackActive=false;
   updateChallengeStatus();renderDailyLog();
-  showResultModal(record,{title:'Time Attack Result',allowSave:true});
+  showResultModal(record,{title:'Time Attack Diagnostic',allowSave:true});
 }
 function saveDailyRecord(record){
   const logs=getDailyLogs();
@@ -3938,6 +4056,7 @@ function saveDailyRecord(record){
     logs[idx].accuracy=logs[idx].total?Math.round(logs[idx].correct/logs[idx].total*100):0;
     logs[idx].endedAt=record.endedAt;
     logs[idx].durationSec=(logs[idx].durationSec||0)+(record.durationSec||0);
+    logs[idx].attempts=[...(logs[idx].attempts||[]),...(record.attempts||[])].slice(-120);
   }else{
     record.sessions=1;
     logs.unshift(record);
@@ -3945,7 +4064,7 @@ function saveDailyRecord(record){
   setDailyLogs(logs);
 }
 function saveDailyLogManual(){
-  const record={date:todayKey(),endedAt:new Date().toISOString(),durationSec:0,mode:questionMode,clefMode,key:activeKeySig().label,seqLen:questionMode==='sequence'?currentSequenceTargetLength:null,correct:stats.correct,total:stats.total,accuracy:stats.total?Math.round(stats.correct/stats.total*100):0};
+  const record={date:todayKey(),endedAt:new Date().toISOString(),durationSec:0,mode:questionMode,clefMode,key:activeKeySig().label,seqLen:questionMode==='sequence'?currentSequenceTargetLength:null,correct:stats.correct,total:stats.total,accuracy:stats.total?Math.round(stats.correct/stats.total*100):0,difficultyLevel,attempts:getRecentPracticeAttempts()};
   saveDailyRecord(record);renderDailyLog(true);updateChallengeStatus();
 }
 function toggleLogView(){const box=document.getElementById('challenge-log');if(!box)return;box.classList.toggle('show');renderDailyLog();}
@@ -3970,7 +4089,7 @@ function renderDailyLog(forceShow=false){
     const time=new Date(r.endedAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
     const dur=r.durationSec?`${r.durationSec}s`:'manual';
     const seqInfo=r.seqLen?` / ${r.seqLen}notes`:'';
-    return `<div class="challenge-log-item"><span>${r.date} ${time} / ${r.mode}${seqInfo} / ${dur} / ${r.sessions||1}x</span><span>${r.correct}/${r.total} ${r.total?r.accuracy+'%':'—'} <button class="log-delete-btn" onclick="deleteDailyLog(${logs.indexOf(r)})">DEL</button></span></div>`;
+    const idx=logs.indexOf(r); return `<div class="challenge-log-item" onclick="openDailyLog(${idx})" style="cursor:pointer;"><span>${r.date} ${time} / ${r.mode}${seqInfo} / ${dur} / ${r.sessions||1}x</span><span>${r.correct}/${r.total} ${r.total?r.accuracy+'%':'—'} <button class="log-delete-btn" onclick="event.stopPropagation();deleteDailyLog(${idx})">DEL</button></span></div>`;
   }).join('')+`<div class="weakpoint-line">${getWeakPointSummary()}</div>`;
 }
 function initChallengeLog(){
