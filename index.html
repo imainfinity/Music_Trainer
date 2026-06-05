@@ -3154,56 +3154,72 @@ function reviewHistory(i){
 
 function renderHistory(){
   const list=document.getElementById('history-list');
+  if(!list) return;
   list.innerHTML='';
-  if(history.length===0){
-    list.innerHTML='<div style="font-size:12px;font-family:\'DM Mono\',monospace;color:#C0BAB2;padding:8px 0;">まだ回答がありません</div>';
+
+  // Lower HISTORY must be useful during training, not only after modal/save.
+  // Priority:
+  // 1) detailed reviewable history objects
+  // 2) live keystroke session log
+  // 3) visible empty-state card
+  if(history.length===0 && sessionAttemptLog.length===0){
+    list.innerHTML='<div style="font-size:12px;font-family:\'DM Mono\',monospace;color:rgba(246,241,231,.70);padding:10px 12px;border:1px solid rgba(255,255,255,.10);border-radius:12px;background:rgba(255,255,255,.045);">まだ回答がありません / Answer history will appear here</div>';
     return;
   }
+
+  if(history.length===0 && sessionAttemptLog.length>0){
+    sessionAttemptLog.slice(-30).reverse().forEach((a,i)=>{
+      const row=document.createElement('div');
+      const bg=a.correct?'rgba(83,212,140,.10)':'rgba(255,107,118,.12)';
+      const border=a.correct?'rgba(83,212,140,.28)':'rgba(255,107,118,.30)';
+      const icon=a.correct?'✓':'✗';
+      row.style.cssText=`display:grid;grid-template-columns:28px 1fr 1fr 28px;gap:8px;align-items:center;padding:8px 10px;`
+        +`background:${bg};border:1px solid ${border};border-radius:12px;font-family:'DM Mono',monospace;color:rgba(246,241,231,.86);`;
+      row.innerHTML=`<span style="font-size:10px;color:rgba(246,241,231,.46);">${i+1}</span>`
+        +`<span style="font-size:12px;">正解 ${a.expected||'—'}</span>`
+        +`<span style="font-size:12px;">押下 ${a.pressed||'—'}</span>`
+        +`<span style="font-size:14px;font-weight:700;color:${a.correct?'#78F0A9':'#FF8D95'};">${icon}</span>`;
+      list.appendChild(row);
+    });
+    return;
+  }
+
   history.forEach((h,i)=>{
     const isReviewing=reviewingIdx===i;
-    const bg=isReviewing?'#FFF8E8':h.correct?'#EAF3DE':'#FDEAEA';
-    const border=isReviewing?'#E0A020':h.correct?'#A0CC78':'#F0A0A0';
+    const bg=isReviewing?'rgba(247,185,85,.16)':h.correct?'rgba(83,212,140,.10)':'rgba(255,107,118,.12)';
+    const border=isReviewing?'rgba(247,185,85,.36)':h.correct?'rgba(83,212,140,.28)':'rgba(255,107,118,.30)';
     const icon=h.correct?'✓':'✗';
-    const iconColor=h.correct?'#3B7A1A':'#B83030';
+    const iconColor=h.correct?'#78F0A9':'#FF8D95';
     const clefLabel=h.clef==='treble'?'T':'B';
-    const clefColor=h.clef==='treble'?'#2D5FA3':'#7A3AB8';
+    const clefColor=h.clef==='treble'?'#7DB7FF':'#B58CFF';
     const row=document.createElement('div');
-    row.style.cssText=`display:flex;align-items:center;gap:8px;padding:7px 10px;`
-      +`background:${bg};border:.5px solid ${border};border-radius:7px;font-family:'DM Mono',monospace;`
-      +`cursor:pointer;transition:opacity .1s;`;
+    row.style.cssText=`display:grid;grid-template-columns:22px 28px minmax(64px,.8fr) 1.2fr auto;align-items:center;gap:8px;padding:8px 10px;`
+      +`background:${bg};border:1px solid ${border};border-radius:12px;font-family:'DM Mono',monospace;`
+      +`cursor:pointer;transition:opacity .1s;color:rgba(246,241,231,.86);`;
     row.title='タップして五線・鍵盤を確認';
     row.onclick=()=>reviewHistory(i);
 
     const idx=document.createElement('span');
-    idx.style.cssText=`font-size:10px;color:#9A958F;min-width:16px;`;
+    idx.style.cssText=`font-size:10px;color:rgba(246,241,231,.46);`;
     idx.textContent=i+1;
 
     const cb=document.createElement('span');
-    cb.style.cssText=`font-size:10px;font-weight:500;padding:1px 5px;border-radius:4px;background:${clefColor}22;color:${clefColor};`;
+    cb.style.cssText=`font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px;background:${clefColor}22;color:${clefColor};text-align:center;`;
     cb.textContent=clefLabel;
 
     const note=document.createElement('span');
-    note.style.cssText=`font-size:14px;font-weight:500;color:#1A1714;min-width:36px;`;
+    note.style.cssText=`font-size:13px;font-weight:700;color:#FFF7EA;`;
     note.textContent=h.chord?h.label:(h.note+h.oct);
 
     const jp=document.createElement('span');
-    jp.style.cssText=`font-size:12px;color:#5A5550;flex:1;`;
-    jp.textContent=h.chord?('構成音: '+h.jp):h.jp;
+    jp.style.cssText=`font-size:11px;color:rgba(246,241,231,.68);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;`;
+    jp.textContent=h.chord?('正解: '+h.jp):('正解: '+h.jp);
 
-    if(!h.correct){
-      const wr=document.createElement('span');
-      wr.style.cssText=`font-size:11px;color:#B83030;`;
-      wr.textContent=`選択: ${h.answeredLabel||h.answered}`;
-      row.appendChild(idx);row.appendChild(cb);row.appendChild(note);row.appendChild(jp);row.appendChild(wr);
-    } else {
-      row.appendChild(idx);row.appendChild(cb);row.appendChild(note);row.appendChild(jp);
-    }
+    const pressed=document.createElement('span');
+    pressed.style.cssText=`font-size:11px;color:${h.correct?'rgba(120,240,169,.90)':'#FFB6BC'};white-space:nowrap;`;
+    pressed.textContent=h.correct?icon:`${icon} 押下: ${h.answeredLabel||h.answered}`;
 
-    const ic=document.createElement('span');
-    ic.style.cssText=`font-size:13px;font-weight:500;color:${iconColor};`;
-    ic.textContent=isReviewing?'👁':icon;
-    row.appendChild(ic);
-
+    row.appendChild(idx);row.appendChild(cb);row.appendChild(note);row.appendChild(jp);row.appendChild(pressed);
     list.appendChild(row);
   });
 }
