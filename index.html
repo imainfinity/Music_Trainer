@@ -196,6 +196,29 @@ body:before{
 .stab:hover,.ks-btn:hover,.rlvl:hover,.skip-btn:hover,.btn-new:hover{background:rgba(255,255,255,.12);color:#FFF7EA;transform:translateY(-1px);}
 .stab.active,.ks-btn.active{background:linear-gradient(135deg,#4777FF,#8F65FF);border-color:rgba(255,255,255,.24);color:#fff;box-shadow:var(--glow);}
 .keysig-panel{border-radius:18px;padding:14px 16px;margin-bottom:16px;}
+.keysig-panel.auto-key-mode{opacity:.46;filter:grayscale(.85);position:relative;}
+.keysig-panel.auto-key-mode .ks-btn{pointer-events:none;}
+.keysig-panel.auto-key-mode:after{
+  content:"難易度モードで調号を自動拡張中";
+  position:absolute;right:14px;top:12px;
+  padding:6px 10px;border-radius:999px;
+  background:rgba(255,255,255,.12);
+  border:1px solid rgba(255,255,255,.14);
+  color:rgba(246,241,231,.82);
+  font-family:var(--mono);font-size:10px;letter-spacing:.04em;
+}
+.key-mode-note{
+  margin-top:10px;
+  padding:9px 11px;
+  border-radius:14px;
+  background:rgba(255,255,255,.06);
+  border:1px solid rgba(255,255,255,.09);
+  color:rgba(246,241,231,.66);
+  font-size:11px;
+  line-height:1.5;
+}
+.key-mode-note strong{color:#FFE2A6;font-family:var(--mono);}
+
 .keysig-title,.pattern-label{color:rgba(246,241,231,.48);}
 .keysig-row{gap:8px;align-items:stretch;}
 .ks-btn{min-width:96px;text-align:center;}
@@ -901,6 +924,7 @@ input[type="range"]{accent-color:#7DB7FF;}
   <div class="keysig-panel">
     <div class="keysig-title">Key Signature — 調号（和名 / Major / Minor）</div>
     <div class="keysig-row" id="keysig-row"></div>
+    <div class="key-mode-note" id="key-mode-note"><strong>KEY FIXED</strong>：選択した調号で出題します。</div>
     <div class="keysig-tip-head">
       <div class="keysig-tip-label">Tip mode — 調号の覚え方ヒント</div>
       <button class="tip-toggle-btn" id="tip-toggle-btn" onclick="toggleKeyTip()">TIP OFF</button>
@@ -1320,6 +1344,26 @@ function difficultyText(){
   return map[lv]||map[1];
 }
 
+
+function difficultyUsesAutoKey(){
+  return difficultyLevel>=9;
+}
+
+function keyModeText(){
+  if(difficultyLevel>=10) return '<strong>ALL KEYS</strong>：Lv.10のため、全調ランダムで出題します。上の調号選択は基準としては使いません。';
+  if(difficultyLevel>=9) return '<strong>RELATED KEYS</strong>：Lv.9のため、選択調号＋近親調で出題します。上の調号は基準キーです。';
+  return '<strong>KEY FIXED</strong>：選択した調号で出題します。';
+}
+
+function updateKeySignaturePanelState(){
+  const panel=document.querySelector('.keysig-panel');
+  const note=document.getElementById('key-mode-note');
+  const auto=difficultyUsesAutoKey();
+  if(panel) panel.classList.toggle('auto-key-mode',auto);
+  if(note) note.innerHTML=keyModeText();
+}
+
+
 function setDifficultyLevel(v,skipNext=false){
   difficultyLevel=Math.max(1,Math.min(10,parseInt(v,10)||1));
   localStorage.setItem('musicTrainerDifficultyLevel',String(difficultyLevel));
@@ -1335,6 +1379,7 @@ function setDifficultyLevel(v,skipNext=false){
   if(fill) fill.style.width=`${10+pct*0.9}%`;
   if(label) label.textContent=`Lv.${difficultyLevel} / 10`;
   if(desc) desc.textContent=difficultyText();
+  updateKeySignaturePanelState();
   updatePracticeSummary();
   if(!skipNext && (questionMode==='sequence'||questionMode==='chordseq')) nextQuestion();
 }
@@ -4571,6 +4616,7 @@ function initApp(){
   initFiveFingerMode();
   initSequenceLength();
   initDifficultyLevel();
+  updateKeySignaturePanelState();
   initTimeAttackDuration();
   initTrainingMode();
   initChallengeLog();
