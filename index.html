@@ -2407,6 +2407,62 @@ function toggleChordSelection(n){
   updateChordPanel();
 }
 
+
+function buildChordSeqSummaryHistory(ok,seqLen){
+  return {
+    chordseq:true,
+    note:'ChordSeq',
+    oct:'',
+    jp:(currentChordSequence||[]).map(c=>(c.notes||[]).map(pitchLabel).join('+')).join(' / '),
+    clef:currentClef,
+    correct:ok===seqLen,
+    answered:(chordSequenceResults||[]).map(r=>r?(r.selected||[]).join('・'):'?').join(' / '),
+    answeredLabel:(chordSequenceResults||[]).map((r,idx)=>formatChordSelection(chordSequenceSelections[idx]||[])).join(' / '),
+    keySig:activeKeySig(),
+    chordSequence:currentChordSequence||[],
+    notes:(currentChordSequence||[]).flatMap(c=>c.notes||[])
+  };
+}
+
+function safeFinishChordSequence(seqLen){
+  const ok=(chordSequenceResults||[]).filter(r=>r&&r.correct).length;
+  const fb=document.getElementById('feedback');
+  const leveled=tryAutoLevelUp(ok,seqLen);
+  if(fb){
+    fb.textContent=`${ok===seqLen?'✓':'△'} 重音連続 CLEAR ${ok}/${seqLen}${leveled?' — 難易度 Lv.'+difficultyLevel+'へ':''}`;
+    fb.className=ok===seqLen?'feedback-bar ok':'feedback-bar ng';
+  }
+
+  answered=true;
+
+  try{
+    history.unshift(buildChordSeqSummaryHistory(ok,seqLen));
+    if(history.length>30) history.pop();
+    renderHistory();
+  }catch(e){
+    console.warn('Chord sequence summary history skipped:',e);
+  }
+
+  // Do not force review rendering here. It can collide with a page boundary on mobile.
+  // The detailed keystroke history is already preserved in lower HISTORY and the result modal.
+  chordPitchSelection.clear();
+  chordPitchOrder=[];
+  chordAutoSubmitting=false;
+  updateChordPanel();
+  updateChordCheckDock();
+  renderStaff();
+  renderKeyboard(null);
+
+  const nextBtn=document.getElementById('next-btn');
+  if(shouldAutoMoveNext()){
+    if(nextBtn) nextBtn.style.display='none';
+    scheduleNextQuestionAfterAnswer(timeAttackActive?350:1200);
+  }else{
+    if(nextBtn) nextBtn.style.display='block';
+  }
+}
+
+
 function submitChordAnswer(autoTriggered=false){
   hideTipAssist();
   const now=Date.now();
@@ -2506,48 +2562,11 @@ function submitChordAnswer(autoTriggered=false){
         return;
       }
 
-      // Last bundle: show final colors, then finish and enter review.
+      // Last bundle: show final colors, then finish safely.
+      // Do not call reviewChordSeqBundle() automatically here; on a wrong final bundle
+      // it could collide with page/review state and fall into the hard catch.
       renderKeyboard(currentChord.notes,bundleResult.wrongPitchNotes||[]);
-      answered=true;
-      const ok=chordSequenceResults.filter(r=>r&&r.correct).length;
-
-      if(fb){
-        const leveled=tryAutoLevelUp(ok,seqLen);
-        fb.textContent=`${ok===seqLen?'✓':'△'} 重音連続 CLEAR ${ok}/${seqLen}${leveled?' — 難易度 Lv.'+difficultyLevel+'へ':''} — 前/次の束で振り返り`;
-        fb.className=ok===seqLen?'feedback-bar ok':'feedback-bar ng';
-      }
-
-      history.unshift({
-        chordseq:true,
-        note:'ChordSeq',
-        oct:'',
-        jp:currentChordSequence.map(c=>c.notes.map(pitchLabel).join('+')).join(' / '),
-        clef:currentClef,
-        correct:ok===seqLen,
-        answered:chordSequenceResults.map(r=>r?r.selected.join('・'):'?').join(' / '),
-        answeredLabel:chordSequenceResults.map((r,idx)=>formatChordSelection(chordSequenceSelections[idx])).join(' / '),
-        keySig:activeKeySig(),
-        chordSequence:currentChordSequence,
-        notes:currentChordSequence.flatMap(c=>c.notes)
-      });
-      if(history.length>10) history.pop();
-      renderHistory();
-
-      chordPitchSelection.clear();
-      chordPitchOrder=[];
-      chordSequenceReviewIndex=0;
-      reviewChordSeqBundle(0);
-      chordAutoSubmitting=false;
-
-      const nextBtn=document.getElementById('next-btn');
-      if(shouldAutoMoveNext()){
-        if(nextBtn) nextBtn.style.display='none';
-        // In time attack / auto mode, the end of a 5- or 10-bundle chord sequence
-        // is treated as one completed question set. Do not wait for the Next button.
-        scheduleNextQuestionAfterAnswer(timeAttackActive?350:1500);
-      }else{
-        if(nextBtn) nextBtn.style.display='block';
-      }
+      safeFinishChordSequence(seqLen);
       return;
 
     }catch(err){
@@ -2567,8 +2586,17 @@ function submitChordAnswer(autoTriggered=false){
         return;
       }
       if(fb){
-        fb.textContent='処理エラーが出たため、この問題をスキップしてください';
+        fb.textContent='内部処理を復旧しました。次の問題へ進みます。';
         fb.className='feedback-bar ng';
+      }
+      try{
+        answered=true;
+        chordAutoSubmitting=false;
+        const nextBtn=document.getElementById('next-btn');
+        if(nextBtn) nextBtn.style.display='none';
+        scheduleNextQuestionAfterAnswer(400);
+      }catch(e2){
+        nextQuestion();
       }
       return;
     }
