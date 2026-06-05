@@ -2168,8 +2168,7 @@ function coreTryAutoJudgeChordNow(){
   if(!coreQuestion || coreQuestion.mode!=='chordseq' || answered) return;
   const required=coreCurrentRequiredChordCount();
   const selectedCount=chordPitchSelection ? chordPitchSelection.size : 0;
-  if(selectedCount>=required){
-    // Old Check-button era flags must not block automatic judging.
+  if(selectedCount===required){  // ← >= から === に変更。過剰選択で誤発火しない
     chordAutoSubmitting=false;
     clearTimeout(chordAutoSubmitTimer);
     chordAutoSubmitTimer=null;
@@ -2581,6 +2580,7 @@ function updatePracticeSummary(){
   const chordSummary=document.getElementById('practice-chord-summary');
   if(chordSummary){
     const sizeLabel=chordSize==='random'?'2-5 random':`${chordSize}音`;
+    const voicingTypeLabel=(m)=>({close:'Close',open:'Open',wide:'Large Spread',mixed:'Mixed'}[m]||'Mixed');
     chordSummary.textContent=`Chord: ${sizeLabel} / ${voicingTypeLabel(chordVoicingMode)} / ${fiveFingerMode?'5-FINGER unique / max octave':'wide allowed'}`;
   }
   const logSummary=document.getElementById('practice-log-summary');
@@ -2686,6 +2686,7 @@ function coreAdvanceToNextChordBundleSafe(){
     chordPitchSelection.clear();
     chordPitchOrder=[];
     chordAutoSubmitting=false;
+    answered=false;  // ← 次の束へ進む際にロック解除
 
     if(!coreQuestion || coreQuestion.mode!=='chordseq'){
       nextQuestion();
@@ -5382,9 +5383,9 @@ function toggleChordPitch(note){
 
 function submitChordAnswer(autoTriggered=false){
   hideTipAssist && hideTipAssist();
-  // This function is now the automatic judge. It must not depend on the old Check button state.
   chordAutoSubmitting=false;
   if(!coreQuestion || coreQuestion.mode!=='chordseq' || answered) return;
+  answered=true;  // ← 即座にロック。二重発火・スキップを防ぐ
   reviewingIdx=null;
   const bundle=coreQuestion.bundles[coreQuestion.index];
   if(!bundle) return;
