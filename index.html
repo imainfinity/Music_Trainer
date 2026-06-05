@@ -517,10 +517,10 @@ svg.staff{height:190px;filter:drop-shadow(0 10px 20px rgba(0,0,0,.08));}
 .chord-check-dock.show{display:block;}
 .chord-check-dock-row{display:flex;align-items:center;gap:10px;justify-content:space-between;}
 .chord-check-status{font-size:12px;color:rgba(246,241,231,.66);font-family:var(--mono);}
-.chord-check-btn{flex:1;border:1px solid rgba(255,255,255,.18);background:linear-gradient(135deg,#4777FF,#7D5DFF);color:#fff;border-radius:999px;padding:11px 14px;font-size:13px;font-family:var(--mono);font-weight:700;cursor:pointer;box-shadow:0 12px 30px rgba(71,119,255,.18);}
+.chord-check-btn{display:none!important;flex:1;border:1px solid rgba(255,255,255,.18);background:linear-gradient(135deg,#4777FF,#7D5DFF);color:#fff;border-radius:999px;padding:11px 14px;font-size:13px;font-family:var(--mono);font-weight:700;cursor:pointer;box-shadow:0 12px 30px rgba(71,119,255,.18);}
 .chord-check-btn:hover{transform:translateY(-1px);filter:brightness(1.04);}
 /* Auto-answer mode: chord sequence advances after the required notes are selected. */
-.chord-check-btn{display:none!important;}
+.chord-check-btn{display:none!important;display:none!important;}
 @media (max-width:720px){
   .chord-check-dock-row{flex-direction:column;align-items:stretch;}
   .chord-check-status{text-align:left;}
@@ -882,7 +882,7 @@ input[type="range"]{accent-color:#7DB7FF;}
     grid-column:1 / -1;
   }
 
-  body.mobile-practice-active .chord-check-btn{
+  body.mobile-practice-active .chord-check-btn{display:none!important;
     grid-column:1 / -1;
     order:1;
     padding:12px 12px!important;
@@ -1094,7 +1094,7 @@ input[type="range"]{accent-color:#7DB7FF;}
   <div class="chord-check-dock" id="chord-check-dock">
     <div class="chord-check-dock-row">
       <div class="chord-check-status" id="chord-check-status">重音 選択: 0 / 2</div>
-      <button class="chord-check-btn" id="main-chord-check-btn" onclick="submitChordAnswer()" ontouchstart="event.preventDefault();submitChordAnswer();" onpointerup="submitChordAnswer();">ここで答え合わせ / Check</button>
+      <button class="chord-check-btn" id="main-chord-check-btn" onclick="submitChordAnswer()" ontouchstart="event.preventDefault();submitChordAnswer();" onpointerup="submitChordAnswer();"></button>
       <button class="chord-undo-btn" onclick="undoLastChordPitch()">最後の音を消す</button>
       <button class="chord-undo-btn" onclick="prevChordSeqReview()">前の束</button>
       <button class="chord-undo-btn" onclick="nextChordSeqReview()">次の束</button>
@@ -2163,6 +2163,21 @@ function scheduleChordAutoSubmit(){
 }
 
 
+
+function coreTryAutoJudgeChordNow(){
+  if(!coreQuestion || coreQuestion.mode!=='chordseq' || answered) return;
+  const required=coreCurrentRequiredChordCount();
+  const selectedCount=chordPitchSelection ? chordPitchSelection.size : 0;
+  if(selectedCount>=required){
+    // Old Check-button era flags must not block automatic judging.
+    chordAutoSubmitting=false;
+    clearTimeout(chordAutoSubmitTimer);
+    chordAutoSubmitTimer=null;
+    submitChordAnswer(true);
+  }
+}
+
+
 function coreCurrentRequiredChordCount(){
   if(coreQuestion && coreQuestion.mode==='chordseq'){
     const b=coreQuestion.bundles && coreQuestion.bundles[coreQuestion.index];
@@ -2557,7 +2572,7 @@ function updateChordCheckDock(){
         seqText=` ${Math.min(chordSequenceIndex+1,Math.max(1,currentChordSequence.length))}/${Math.max(1,currentChordSequence.length)} /`;
       }
     }
-    status.textContent=`重音${seqText} 選択: ${chordPitchSelection.size} / ${currentChordSize}　※選択完了で自動判定`;
+    status.textContent=`重音${seqText} 選択: ${chordPitchSelection.size} / ${currentChordSize}　※必要音数で即時自動判定`;
   }
 }
 
@@ -5285,33 +5300,6 @@ function selectNote(n,displayLabel=n){
   }, timeAttackActive?350:650);
 }
 
-function coreScheduleChordAutoSubmitIfReady(reason=''){
-  if(!coreQuestion || coreQuestion.mode!=='chordseq' || answered) return;
-  const required=coreCurrentRequiredChordCount();
-  if(!required || chordPitchSelection.size<required) return;
-
-  const expectedIndex=coreQuestion.index;
-  if(chordAutoSubmitTimer) clearTimeout(chordAutoSubmitTimer);
-
-  const run=()=>{
-    if(!coreQuestion || coreQuestion.mode!=='chordseq' || answered) return;
-    if(coreQuestion.index!==expectedIndex) return;
-    const req=coreCurrentRequiredChordCount();
-    if(chordPitchSelection.size>=req){
-      submitChordAnswer(true);
-    }
-  };
-
-  // 2/2・3/3など必要音数に到達したら必ず自動判定する。
-  // 1回目は短め、WebView等でイベント処理が詰まった場合に備えて保険で再確認する。
-  chordAutoSubmitTimer=setTimeout(()=>{
-    chordAutoSubmitTimer=null;
-    run();
-  },70);
-
-  setTimeout(run,320);
-}
-
 function toggleChordPitch(note){
   if(!coreQuestion || coreQuestion.mode!=='chordseq' || answered || chordAutoSubmitting) return;
   coreMarkInput();
@@ -5326,18 +5314,13 @@ function toggleChordPitch(note){
   }
   renderKeyboard(null);
   updateChordPanel();
-
-  // ここが今回の修正点：
-  // UIが「選択: 2 / 2」になった瞬間に、現在の束の必要音数で自動判定を必ず発火させる。
-  coreScheduleChordAutoSubmitIfReady('toggleChordPitch');
+  coreTryAutoJudgeChordNow();
 }
 
 function submitChordAnswer(autoTriggered=false){
   hideTipAssist && hideTipAssist();
-  if(chordAutoSubmitTimer){
-    clearTimeout(chordAutoSubmitTimer);
-    chordAutoSubmitTimer=null;
-  }
+  // This function is now the automatic judge. It must not depend on the old Check button state.
+  chordAutoSubmitting=false;
   if(!coreQuestion || coreQuestion.mode!=='chordseq' || answered) return;
   const bundle=coreQuestion.bundles[coreQuestion.index];
   if(!bundle) return;
@@ -5460,33 +5443,8 @@ function initApp(){
   initChallengeLog();
   initKeyboardScrollRail();
   initMobilePracticeMode();
-  const mainCheckBtn=document.getElementById('main-chord-check-btn');
-  if(mainCheckBtn){
-    ['touchstart','touchend','pointerup','click'].forEach(type=>{
-      mainCheckBtn.addEventListener(type,e=>{
-        e.preventDefault();
-        submitChordAnswer();
-      },{passive:false});
-    });
-  }
-
-  // Capture fallback: even if mobile WebView swallows the normal click,
-  // any tap on a chord-check button is routed here.
-  document.addEventListener('touchstart',e=>{
-    const btn=e.target&&e.target.closest?e.target.closest('.chord-check-btn'):null;
-    if(btn){
-      e.preventDefault();
-      submitChordAnswer();
-    }
-  },{capture:true,passive:false});
-
-  document.addEventListener('pointerup',e=>{
-    const btn=e.target&&e.target.closest?e.target.closest('.chord-check-btn'):null;
-    if(btn){
-      e.preventDefault();
-      submitChordAnswer();
-    }
-  },{capture:true,passive:false});
+  // Legacy Check button handlers intentionally disabled.
+  // Chord Seq now judges immediately when the required number of keys is selected.
 
   const tm=document.getElementById('top-mode-melody');
   const tc=document.getElementById('top-mode-chord');
