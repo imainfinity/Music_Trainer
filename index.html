@@ -197,7 +197,8 @@ body:before{
 .stab.active,.ks-btn.active{background:linear-gradient(135deg,#4777FF,#8F65FF);border-color:rgba(255,255,255,.24);color:#fff;box-shadow:var(--glow);}
 .keysig-panel{border-radius:18px;padding:14px 16px;margin-bottom:16px;}
 .keysig-panel.auto-key-mode{position:relative;}
-.keysig-panel.auto-key-mode .ks-btn{opacity:.42;filter:grayscale(.6);}
+.keysig-panel.auto-key-mode .keysig-row{display:flex!important;visibility:visible!important;}
+.keysig-panel.auto-key-mode .ks-btn{display:flex!important;visibility:visible!important;opacity:.42;filter:grayscale(.6);}
 .keysig-panel.auto-key-mode .ks-btn.current-question-key{
   opacity:1;
   filter:none;
@@ -1770,7 +1771,7 @@ function buildKeySigUI(){
   row.innerHTML='';
   KEY_SIGS.forEach((ks,i)=>{
     const b=document.createElement('button');
-    b.setAttribute("data-key-index",String(idx));
+    b.setAttribute("data-key-index",String(i));
     b.className='ks-btn'+(i===DEFAULT_KEY_INDEX?' active':'');
     b.innerHTML=`<span class="ks-jp">${ks.jp}</span><span class="ks-major">${ks.major}</span><span class="ks-minor">${ks.minor}</span>`;
     b.onclick=()=>{
@@ -1778,6 +1779,7 @@ function buildKeySigUI(){
       questionKeySig=null;
       document.querySelectorAll('.ks-btn').forEach(x=>x.classList.remove('active'));
       b.classList.add('active');
+      updateKeySignaturePanelState();
       nextQuestion();
       updateKeyTip();
     };
