@@ -3273,7 +3273,7 @@ function renderHistory(){
         +`<span style="font-size:12px;">押下 ${a.pressed||'—'}</span>`
         +`<span style="font-size:11px;color:${a.slowRead?'#FFE2A6':'rgba(246,241,231,.62)'};">R ${formatAttemptTime(a.readSec)}</span>`
         +`<span style="font-size:11px;color:${a.slowInput?'#FFBA8A':'rgba(246,241,231,.62)'};">I ${formatAttemptTime(a.inputSec)}</span>`
-        +`<span style="font-size:11px;color:${a.slowGap?'#C9B0FF':'rgba(246,241,231,.62)'};">G ${formatAttemptTime(a.gapSec)}</span>`
+        +`<span style="font-size:11px;color:${a.slowGap?'#C9B0FF':'rgba(246,241,231,.62)'};">G ${formatGapTime(a.gapSec)}</span>`
         +`<span style="font-size:14px;font-weight:700;color:${a.correct?'#78F0A9':'#FF8D95'};">${icon}</span>`;
       list.appendChild(row);
     });
@@ -3323,7 +3323,7 @@ function renderHistory(){
     inputTm.textContent=h.attempt?'I '+formatAttemptTime(h.attempt.inputSec):'I —';
     const gapTm=document.createElement('span');
     gapTm.style.cssText=`font-size:11px;color:${h.attempt&&h.attempt.slowGap?'#C9B0FF':'rgba(246,241,231,.62)'};white-space:nowrap;`;
-    gapTm.textContent=h.attempt?'G '+formatAttemptTime(h.attempt.gapSec):'G —';
+    gapTm.textContent=h.attempt?'G '+formatGapTime(h.attempt.gapSec):'G —';
     row.appendChild(idx);row.appendChild(cb);row.appendChild(note);row.appendChild(jp);row.appendChild(readTm);row.appendChild(inputTm);row.appendChild(gapTm);row.appendChild(pressed);
     list.appendChild(row);
   });
@@ -3896,9 +3896,15 @@ function computeAttemptTiming(){
 function formatAttemptTime(sec){
   if(sec===null||sec===undefined||Number.isNaN(sec)) return '—';
   const v=Math.round(sec*10)/10;
-  // Gap / Read / Input analysis needs sub-second visibility.
-  // Always show one decimal place so 0.4s does not become visually ambiguous.
   return `${v.toFixed(1)}s`;
+}
+
+function formatGapTime(sec){
+  if(sec===null||sec===undefined||Number.isNaN(sec)) return '—';
+  // Gap is the most sensitive metric, so keep two decimals.
+  // Example: 0.06s / 0.24s / 0.83s
+  const v=Math.round(sec*100)/100;
+  return `${v.toFixed(2)}s`;
 }
 
 function slowAttemptThreshold(){
@@ -3970,7 +3976,7 @@ function renderResultAttemptList(attempts){
     return;
   }
   box.innerHTML='<div class="result-attempt-row result-attempt-head"><span>No.</span><span>正解</span><span>押した音</span><span>読譜</span><span>入力</span><span>間隔</span><span>結果</span></div>'
-    + rows.map((a,i)=>`<div class="result-attempt-row ${a.correct?'ok':'ng'} ${a.slowRead?'slow-read':''} ${a.slowInput?'slow-input':''} ${a.slowGap?'slow-gap':''}"><span>${a.no||i+1}</span><span>${a.expected||'—'}</span><span>${a.pressed||'—'}</span><span>${formatAttemptTime(a.readSec)}</span><span>${formatAttemptTime(a.inputSec)}</span><span>${formatAttemptTime(a.gapSec)}</span><span>${a.correct?'✓':'✗'}</span></div>`).join('');
+    + rows.map((a,i)=>`<div class="result-attempt-row ${a.correct?'ok':'ng'} ${a.slowRead?'slow-read':''} ${a.slowInput?'slow-input':''} ${a.slowGap?'slow-gap':''}"><span>${a.no||i+1}</span><span>${a.expected||'—'}</span><span>${a.pressed||'—'}</span><span>${formatAttemptTime(a.readSec)}</span><span>${formatAttemptTime(a.inputSec)}</span><span>${formatGapTime(a.gapSec)}</span><span>${a.correct?'✓':'✗'}</span></div>`).join('');
 }
 
 function openDailyLog(index){
@@ -4080,7 +4086,7 @@ function buildResultAdvice(record){
   if((slowRead&&slowRead.readSec)||(slowInput&&slowInput.inputSec)){
     const readText=slowRead&&slowRead.readSec?`読譜: ${slowRead.no||''} / ${slowRead.expected||'—'} ${formatAttemptTime(slowRead.readSec)}`:'';
     const inputText=slowInput&&slowInput.inputSec?`入力: ${slowInput.no||''} / ${slowInput.expected||'—'} ${formatAttemptTime(slowInput.inputSec)}`:'';
-    const gapText=slowGap&&slowGap.gapSec?`間隔: ${slowGap.no||''} / ${slowGap.expected||'—'} ${formatAttemptTime(slowGap.gapSec)}`:'';
+    const gapText=slowGap&&slowGap.gapSec?`間隔: ${slowGap.no||''} / ${slowGap.expected||'—'} ${formatGapTime(slowGap.gapSec)}`:'';
     improve=`${[readText,inputText,gapText].filter(Boolean).join(' / ')}${slowCount?` / 迷い ${slowCount}件`:''}`;
   }else if(weak && !weak.includes('蓄積中')) improve=weak.replace('Weak point:','');
   let advice='まずは譜面を見てから鍵盤に降りるまでの時間を短くしましょう。';
