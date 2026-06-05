@@ -480,7 +480,7 @@ svg.staff{height:190px;filter:drop-shadow(0 10px 20px rgba(0,0,0,.08));}
 .challenge-btn{border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.08);color:rgba(246,241,231,.76);border-radius:999px;padding:7px 11px;font-size:11px;font-family:var(--mono);cursor:pointer;}
 .challenge-btn.active,.challenge-btn.primary{background:linear-gradient(135deg,#4777FF,#7D5DFF);color:#fff;border-color:rgba(255,255,255,.24);}
 .challenge-status{font-size:11px;font-family:var(--mono);color:rgba(246,241,231,.66);}
-.challenge-log{display:none;margin-top:10px;max-height:140px;overflow:auto;border-top:1px solid rgba(255,255,255,.08);padding-top:8px;}
+.challenge-log{display:none;margin-top:10px;max-height:220px;overflow:auto;border-top:1px solid rgba(255,255,255,.08);padding-top:8px;background:rgba(255,255,255,.035);border-radius:14px;padding:10px;}
 .challenge-log.show{display:block;}
 .challenge-log-item{display:flex;justify-content:space-between;gap:8px;padding:6px 0;font-size:11px;font-family:var(--mono);color:rgba(246,241,231,.72);border-bottom:1px solid rgba(255,255,255,.055);}
 .sequence-progress{font-size:11px;font-family:var(--mono);color:rgba(246,241,231,.62);margin:-5px 0 10px;text-align:right;}
@@ -1017,13 +1017,17 @@ input[type="range"]{accent-color:#7DB7FF;}
         <button class="challenge-btn" onclick="clearDailyLogs()">CLEAR</button>
       </div>
     </div>
-    <div class="challenge-log" id="challenge-log"></div>
+    <div class="challenge-log" id="challenge-log-legacy"></div>
   </div>
 
 
   <div class="practice-dashboard">
     <div class="practice-card">
       <div class="practice-card-title">CHORD / SEQUENCE SETTINGS</div>
+      <div class="practice-controls" style="margin-bottom:8px;">
+        <button class="challenge-btn" id="top-mode-melody" onclick="setQuestionMode('sequence',document.getElementById('qtab-sequence'))">Melody Seq</button>
+        <button class="challenge-btn" id="top-mode-chord" onclick="setQuestionMode('chordseq',document.getElementById('qtab-chordseq'))">Chord Seq</button>
+      </div>
       <div class="practice-controls">
         <button class="chord-size-btn active" id="top-chord-size-2" onclick="setChordSize(2)">2音</button>
         <button class="chord-size-btn" id="top-chord-size-3" onclick="setChordSize(3)">3音</button>
@@ -1067,6 +1071,7 @@ input[type="range"]{accent-color:#7DB7FF;}
         </div>
       </div>
       <div class="practice-subline" id="practice-log-summary">LOG OFF / Timer ready</div>
+      <div class="challenge-log" id="challenge-log"></div>
     </div>
   </div>
 
@@ -1812,9 +1817,31 @@ function setQuestionMode(mode,el){
   if(el) el.classList.add('active');
   const panel=document.getElementById('chord-panel');
   if(panel) panel.classList.toggle('show',questionMode==='chord'||questionMode==='chordseq');
+  const tm=document.getElementById('top-mode-melody');
+  const tc=document.getElementById('top-mode-chord');
+  if(tm) tm.classList.toggle('active',questionMode==='sequence');
+  if(tc) tc.classList.toggle('active',questionMode==='chordseq');
   updateChordCheckDock();
   nextQuestion();
 }
+
+
+function ensureChordSeqModeFromSettings(){
+  // The top CHORD / SEQUENCE SETTINGS panel is a chord-specific control.
+  // If the user touches it while Melody Seq is active, switch into Chord Seq immediately.
+  if(questionMode!=='chordseq'){
+    questionMode='chordseq';
+    document.querySelectorAll('[id^=qtab-]').forEach(x=>x.classList.remove('active'));
+    const tab=document.getElementById('qtab-chordseq');
+    if(tab) tab.classList.add('active');
+    const panel=document.getElementById('chord-panel');
+    if(panel) panel.classList.add('show');
+    updateChordCheckDock();
+    return true;
+  }
+  return false;
+}
+
 
 function setChordSize(size){
   chordSize=size==='random'?'random':parseInt(size,10);
@@ -1823,8 +1850,9 @@ function setChordSize(size){
   const topBtn=document.getElementById('top-chord-size-'+chordSize);
   if(btn) btn.classList.add('active');
   if(topBtn) topBtn.classList.add('active');
+  ensureChordSeqModeFromSettings();
   updatePracticeSummary();
-  if(questionMode==='chord'||questionMode==='chordseq') nextQuestion();
+  nextQuestion();
 }
 
 function resolveChordSize(){
@@ -1839,8 +1867,9 @@ function setChordVoicing(mode){
   const topBtn=document.getElementById('top-voicing-'+mode);
   if(btn) btn.classList.add('active');
   if(topBtn) topBtn.classList.add('active');
+  ensureChordSeqModeFromSettings();
   updatePracticeSummary();
-  if(questionMode==='chord'||questionMode==='chordseq') nextQuestion();
+  nextQuestion();
 }
 
 function naturalMidi(note){
@@ -4178,7 +4207,10 @@ function renderResultAttemptList(attempts){
 function openDailyLog(index){
   const logs=getDailyLogs();
   const record=logs[index];
-  if(!record) return;
+  if(!record){
+    alert('保存ログが見つかりませんでした。');
+    return;
+  }
   showResultModal(record,{title:'Saved Log Review',allowSave:false});
 }
 
@@ -4339,6 +4371,8 @@ function savePendingResultAndClose(){
   if(pendingResultRecord){
     saveDailyRecord(pendingResultRecord);
     renderDailyLog(true);
+    const box=document.getElementById('challenge-log');
+    if(box) box.classList.add('show');
   }
   closeResultModal(true);
 }
@@ -4526,12 +4560,12 @@ function renderDailyLog(forceShow=false){
   const box=document.getElementById('challenge-log');if(!box)return;
   if(forceShow) box.classList.add('show');
   const logs=getDailyLogs();
-  if(logs.length===0){box.innerHTML='<div class="challenge-log-item"><span>No logs yet</span><span>—</span></div>';return;}
+  if(logs.length===0){box.innerHTML='<div class="challenge-log-item"><span>No saved logs yet</span><span>SAVE後にここへ表示</span></div>';return;}
   box.innerHTML=logs.slice(0,12).map(r=>{
     const time=new Date(r.endedAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
     const dur=r.durationSec?`${r.durationSec}s`:'manual';
     const seqInfo=r.seqLen?` / ${r.seqLen}notes`:'';
-    const idx=logs.indexOf(r); return `<div class="challenge-log-item" onclick="openDailyLog(${idx})" style="cursor:pointer;"><span>${r.date} ${time} / ${r.mode}${seqInfo} / ${dur} / ${r.sessions||1}x</span><span>${r.correct}/${r.total} ${r.total?r.accuracy+'%':'—'} <button class="log-delete-btn" onclick="event.stopPropagation();deleteDailyLog(${idx})">DEL</button></span></div>`;
+    const idx=logs.indexOf(r); return `<div class="challenge-log-item" onclick="openDailyLog(${idx})" style="cursor:pointer;"><span>OPEN ▶ ${r.date} ${time} / ${r.mode}${seqInfo} / ${dur} / ${r.sessions||1}x</span><span>${r.correct}/${r.total} ${r.total?r.accuracy+'%':'—'} <button class="log-delete-btn" onclick="event.stopPropagation();deleteDailyLog(${idx})">DEL</button></span></div>`;
   }).join('')+`<div class="weakpoint-line">${getWeakPointSummary()}</div>`;
 }
 function initChallengeLog(){
@@ -4790,6 +4824,10 @@ function initApp(){
     }
   },{capture:true,passive:false});
 
+  const tm=document.getElementById('top-mode-melody');
+  const tc=document.getElementById('top-mode-chord');
+  if(tm) tm.classList.toggle('active',questionMode==='sequence');
+  if(tc) tc.classList.toggle('active',questionMode==='chordseq');
   nextQuestion();
   updateKeyTip();
   newRhythm();
