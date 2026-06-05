@@ -2168,7 +2168,7 @@ function coreTryAutoJudgeChordNow(){
   if(!coreQuestion || coreQuestion.mode!=='chordseq' || answered) return;
   const required=coreCurrentRequiredChordCount();
   const selectedCount=chordPitchSelection ? chordPitchSelection.size : 0;
-  if(selectedCount===required){  // ← >= から === に変更。過剰選択で誤発火しない
+  if(selectedCount>=required){
     chordAutoSubmitting=false;
     clearTimeout(chordAutoSubmitTimer);
     chordAutoSubmitTimer=null;
@@ -2188,7 +2188,7 @@ function coreCurrentRequiredChordCount(){
 
 
 function toggleChordPitch(note){
-  if(answered||chordAutoSubmitting||!(questionMode==='chord'||questionMode==='chordseq')) return;
+  if(answered||!(questionMode==='chord'||questionMode==='chordseq')) return;
   markFirstInput();
   const key=pitchKey(note);
   if(chordPitchSelection.has(key)){
@@ -2201,7 +2201,7 @@ function toggleChordPitch(note){
   }
   renderKeyboard(null);
   updateChordPanel();
-  if(chordPitchSelection.size>=currentChordSize) scheduleChordAutoSubmit();
+  coreTryAutoJudgeChordNow();
 }
 
 function pickVoicingType(){
@@ -2686,7 +2686,7 @@ function coreAdvanceToNextChordBundleSafe(){
     chordPitchSelection.clear();
     chordPitchOrder=[];
     chordAutoSubmitting=false;
-    answered=false;  // ← 次の束へ進む際にロック解除
+    answered=false;
 
     if(!coreQuestion || coreQuestion.mode!=='chordseq'){
       nextQuestion();
@@ -2746,6 +2746,7 @@ function submitChordAnswer(autoTriggered=false){
   lastChordSubmitAt=now;
 
   if(!(questionMode==='chord'||questionMode==='chordseq')||answered||!currentChord) return;
+  answered=true;
   chordAutoSubmitting=true;
   cancelChordAutoSubmit();
 
@@ -5383,9 +5384,9 @@ function toggleChordPitch(note){
 
 function submitChordAnswer(autoTriggered=false){
   hideTipAssist && hideTipAssist();
+  // This function is now the automatic judge. It must not depend on the old Check button state.
   chordAutoSubmitting=false;
   if(!coreQuestion || coreQuestion.mode!=='chordseq' || answered) return;
-  answered=true;  // ← 即座にロック。二重発火・スキップを防ぐ
   reviewingIdx=null;
   const bundle=coreQuestion.bundles[coreQuestion.index];
   if(!bundle) return;
