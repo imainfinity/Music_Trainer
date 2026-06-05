@@ -1101,6 +1101,33 @@ input[type="range"]{accent-color:#7DB7FF;}
   </div>
 </div>
 
+
+
+<!-- RESULT MODAL -->
+<div class="result-modal-backdrop" id="result-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="result-modal-title">
+  <div class="result-modal">
+    <div class="result-modal-title" id="result-modal-title">Training Result</div>
+    <div class="result-modal-sub" id="result-modal-sub">Result summary</div>
+    <div class="result-kpi-grid">
+      <div class="result-kpi"><strong id="result-kpi-acc">—</strong><span>Accuracy</span></div>
+      <div class="result-kpi"><strong id="result-kpi-score">0/0</strong><span>Correct</span></div>
+      <div class="result-kpi"><strong id="result-kpi-speed">—</strong><span>Speed</span></div>
+    </div>
+    <div class="result-section">
+      <div class="result-section-title">IMPROVEMENT</div>
+      <div id="result-improve">弱点データは蓄積中です。</div>
+    </div>
+    <div class="result-section">
+      <div class="result-section-title">ADVICE</div>
+      <div id="result-advice">練習結果を確認します。</div>
+    </div>
+    <div class="result-actions">
+      <button class="primary" id="result-save-btn" onclick="savePendingResultAndClose()">SAVE</button>
+      <button class="secondary" onclick="closeResultModal(true)">保存しないで戻る</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ==================== SIGHT READING ====================
 const NOTE_JP={C:'ド',D:'レ',E:'ミ',F:'ファ',G:'ソ',A:'ラ',B:'シ'};
@@ -1180,6 +1207,7 @@ let keyboardAutoPosition=true;
 let keyboardAutoPositionPending=true;
 let challengeLogging=false;
 let challengeTimer=null;
+let challengeTimeout=null;
 let challengeEndAt=0;
 let challengeStartStats=null;
 let challengeDurationSec=0;
@@ -2476,7 +2504,7 @@ function submitChordAnswer(autoTriggered=false){
         if(nextBtn) nextBtn.style.display='none';
         // In time attack / auto mode, the end of a 5- or 10-bundle chord sequence
         // is treated as one completed question set. Do not wait for the Next button.
-        scheduleNextQuestionAfterAnswer(timeAttackActive?650:1500);
+        scheduleNextQuestionAfterAnswer(timeAttackActive?350:1500);
       }else{
         if(nextBtn) nextBtn.style.display='block';
       }
@@ -2934,8 +2962,8 @@ function selectNote(n,displayLabel=n){
       renderHistory();
       const nextBtn=document.getElementById('next-btn');
       if(shouldAutoMoveNext()){
-        nextBtn.style.display='none';
-        scheduleNextQuestionAfterAnswer(timeAttackActive?450:1500);
+        if(nextBtn) nextBtn.style.display='none';
+        scheduleNextQuestionAfterAnswer(timeAttackActive?350:1500);
       }else{
         nextBtn.style.display='block';
       }
@@ -3146,7 +3174,12 @@ function renderStaff(){
   const ls=12, topLineY=28;
   const leftX=56, rightX=540;
   const accidentalCount=Math.max(activeKeySig().sharps.length,activeKeySig().flats.length);
-  const noteX=316 + Math.max(0, accidentalCount-4)*18;
+  const keySigStartX=62;
+  const keySigEndX=accidentalCount>0 ? (keySigStartX + accidentalCount*17 + 12) : 86;
+  const contentLeft=Math.max(124, keySigEndX + 28);
+  const contentRight=rightX - 16;
+  const contentMid=(contentLeft + contentRight) / 2;
+  const noteX=Math.max(316 + Math.max(0, accidentalCount-4)*12, contentMid);
   const sc='#1A1714',nc='#2D5FA3',lc='#5A5550';
   const bottomLine=topLineY+4*ls;
 
@@ -3233,15 +3266,16 @@ function renderStaff(){
     // Fit up to 5 chord bundles inside the staff card on mobile.
     // Previous fixed layout (base 170 / gap 92) pushed the 5th bundle outside the card.
     const chordSeqCount=Math.max(1,visibleChordSeq.length);
-    const chordSeqLeft=118;
-    const chordSeqRight=492;
-    const chordSeqAvailable=chordSeqRight-chordSeqLeft;
+    const chordBoxHalf=31;
+    const chordSeqLeft=Math.max(contentLeft + chordBoxHalf, 150);
+    const chordSeqRight=contentRight - chordBoxHalf;
+    const chordSeqAvailable=Math.max(120, chordSeqRight-chordSeqLeft);
     const clusterGap=chordSeqCount>1 ? Math.min(92,chordSeqAvailable/(chordSeqCount-1)) : 0;
-    const clusterBaseX=chordSeqCount===1 ? 300 : chordSeqLeft;
+    const clusterBaseX=chordSeqCount===1 ? ((chordSeqLeft + chordSeqRight) / 2) : chordSeqLeft;
     if(currentChordSequence.length>5){
       const pageNo=Math.floor(chordPageStart/5)+1;
       const pageMax=Math.ceil(currentChordSequence.length/5);
-      txt(`PAGE ${pageNo}/${pageMax}  ${Math.min(chordPageIndex+1,currentChordSequence.length)}/${currentChordSequence.length}`,{x:360,y:topLineY-10,'font-size':11,fill:'#5A5550','font-family':'DM Mono, monospace','font-weight':'700'},svg);
+      txt(`PAGE ${pageNo}/${pageMax}  ${Math.min(chordPageIndex+1,currentChordSequence.length)}/${currentChordSequence.length}`,{x:Math.max(contentLeft+70, contentRight-136),y:topLineY-10,'font-size':11,fill:'#5A5550','font-family':'DM Mono, monospace','font-weight':'700'},svg);
     }
     const placedSeq=[];
     visibleChordSeq.forEach((chord,localCi)=>{
@@ -3372,10 +3406,11 @@ function renderStaff(){
     const noteY=getNoteY(note,currentClef,topLineY,ls);
     const prevY=idx>0?getNoteY(notesToDraw[idx-1],currentClef,topLineY,ls):null;
     const needsSideOffset=questionMode==='chord'&&prevY!==null&&Math.abs(prevY-noteY)<=6;
-    const seqAvailable=410; // use more of the blank staff area
-    const seqGap=notesToDraw.length>1?Math.min(58,seqAvailable/(notesToDraw.length-1)):58;
-    const seqStart=118;
-    const seqX=questionMode==='sequence' ? (seqStart + idx*seqGap) : noteX;
+    const seqStart=Math.max(contentLeft, 132);
+    const seqRight=contentRight;
+    const seqAvailable=Math.max(140, seqRight-seqStart); // use the full blank staff area without colliding with the key signature
+    const seqGap=notesToDraw.length>1?Math.min(74,seqAvailable/(notesToDraw.length-1)):58;
+    const seqX=questionMode==='sequence' ? (notesToDraw.length===1 ? ((seqStart+seqRight)/2) : (seqStart + idx*seqGap)) : noteX;
     const xOffset=needsSideOffset?12:0;
     const x=seqX+xOffset;
     placed.push({x,y:noteY,note,idx:actualIdx});
@@ -3400,7 +3435,7 @@ function renderStaff(){
   if(questionMode==='sequence'&&currentSequence.length>5){
     const pageNo=Math.floor(sequencePageStart/5)+1;
     const pageMax=Math.ceil(currentSequence.length/5);
-    txt(`PAGE ${pageNo}/${pageMax}  ${Math.min(sequenceIndex+1,currentSequence.length)}/${currentSequence.length}`,{x:420,y:topLineY-10,'font-size':11,fill:'#5A5550','font-family':'DM Mono, monospace','font-weight':'700'},svg);
+    txt(`PAGE ${pageNo}/${pageMax}  ${Math.min(sequenceIndex+1,currentSequence.length)}/${currentSequence.length}`,{x:Math.max(contentLeft+70, contentRight-136),y:topLineY-10,'font-size':11,fill:'#5A5550','font-family':'DM Mono, monospace','font-weight':'700'},svg);
   }
 
   if(notesToDraw.length>0){
@@ -3658,13 +3693,29 @@ function shouldAutoMoveNext(){
   return autoAdvance || timeAttackActive;
 }
 
+function isResultModalOpen(){
+  const modal=document.getElementById('result-modal-backdrop');
+  return !!(modal&&modal.classList.contains('show'));
+}
+
 function scheduleNextQuestionAfterAnswer(delay){
   clearTimeout(autoTimer);
-  const modal=document.getElementById('result-modal-backdrop');
   autoTimer=setTimeout(()=>{
-    const modalOpen=modal&&modal.classList.contains('show');
-    if(!modalOpen) nextQuestion();
-  }, delay);
+    if(isResultModalOpen()) return;
+    if(timeAttackActive && challengeEndAt && Date.now()>=challengeEndAt){
+      finishChallengeTimer();
+      return;
+    }
+    nextQuestion();
+  }, Math.max(80,delay||450));
+}
+
+function forceAdvanceOrFinishTimeAttack(delay=450){
+  if(timeAttackActive){
+    scheduleNextQuestionAfterAnswer(delay);
+    return true;
+  }
+  return false;
 }
 
 function timeAttackQuestionsPerMinute(record){
@@ -3843,18 +3894,32 @@ function startChallengeTimer(sec){
   challengeEndAt=Date.now()+sec*1000;
   challengeStartStats={correct:stats.correct,total:stats.total,streak:stats.streak,startedAt:new Date().toISOString()};
   clearInterval(challengeTimer);
-  challengeTimer=setInterval(()=>{updateChallengeStatus();if(Date.now()>=challengeEndAt)finishChallengeTimer();},250);
+  clearTimeout(challengeTimeout);
+  clearTimeout(autoTimer);
+  challengeTimer=setInterval(()=>{
+    updateChallengeStatus();
+    if(timeAttackActive && challengeEndAt && Date.now()>=challengeEndAt) finishChallengeTimer();
+  },250);
+  challengeTimeout=setTimeout(()=>{
+    if(timeAttackActive) finishChallengeTimer();
+  },sec*1000+80);
   updateChallengeStatus();
   nextQuestion();
 }
 function stopChallengeTimer(){
   clearInterval(challengeTimer);
-  challengeTimer=null;challengeEndAt=0;challengeStartStats=null;timeAttackActive=false;
+  clearTimeout(challengeTimeout);
+  clearTimeout(autoTimer);
+  challengeTimer=null;challengeTimeout=null;challengeEndAt=0;challengeStartStats=null;timeAttackActive=false;
   updateChallengeStatus();
 }
 function finishChallengeTimer(){
+  if(!timeAttackActive && !challengeEndAt && !challengeStartStats) return;
   clearInterval(challengeTimer);
+  clearTimeout(challengeTimeout);
+  clearTimeout(autoTimer);
   challengeTimer=null;
+  challengeTimeout=null;
   const start=challengeStartStats||{correct:0,total:0,startedAt:new Date().toISOString()};
   const deltaTotal=Math.max(0,stats.total-start.total);
   const deltaCorrect=Math.max(0,stats.correct-start.correct);
