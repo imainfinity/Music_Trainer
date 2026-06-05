@@ -3895,7 +3895,10 @@ function computeAttemptTiming(){
 
 function formatAttemptTime(sec){
   if(sec===null||sec===undefined||Number.isNaN(sec)) return '—';
-  return `${Math.round(sec*10)/10}s`;
+  const v=Math.round(sec*10)/10;
+  // Gap / Read / Input analysis needs sub-second visibility.
+  // Always show one decimal place so 0.4s does not become visually ambiguous.
+  return `${v.toFixed(1)}s`;
 }
 
 function slowAttemptThreshold(){
