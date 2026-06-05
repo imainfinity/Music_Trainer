@@ -196,15 +196,21 @@ body:before{
 .stab:hover,.ks-btn:hover,.rlvl:hover,.skip-btn:hover,.btn-new:hover{background:rgba(255,255,255,.12);color:#FFF7EA;transform:translateY(-1px);}
 .stab.active,.ks-btn.active{background:linear-gradient(135deg,#4777FF,#8F65FF);border-color:rgba(255,255,255,.24);color:#fff;box-shadow:var(--glow);}
 .keysig-panel{border-radius:18px;padding:14px 16px;margin-bottom:16px;}
-.keysig-panel.auto-key-mode{opacity:.46;filter:grayscale(.85);position:relative;}
-.keysig-panel.auto-key-mode .ks-btn{pointer-events:none;}
+.keysig-panel.auto-key-mode{position:relative;}
+.keysig-panel.auto-key-mode .ks-btn{opacity:.42;filter:grayscale(.6);}
+.keysig-panel.auto-key-mode .ks-btn.current-question-key{
+  opacity:1;
+  filter:none;
+  border-color:rgba(247,185,85,.65);
+  box-shadow:0 0 0 3px rgba(247,185,85,.10),0 14px 30px rgba(247,185,85,.10);
+}
 .keysig-panel.auto-key-mode:after{
-  content:"難易度モードで調号を自動拡張中";
+  content:"出題調号をハイライト中";
   position:absolute;right:14px;top:12px;
   padding:6px 10px;border-radius:999px;
-  background:rgba(255,255,255,.12);
-  border:1px solid rgba(255,255,255,.14);
-  color:rgba(246,241,231,.82);
+  background:rgba(247,185,85,.12);
+  border:1px solid rgba(247,185,85,.24);
+  color:#FFE2A6;
   font-family:var(--mono);font-size:10px;letter-spacing:.04em;
 }
 .key-mode-note{
@@ -218,6 +224,29 @@ body:before{
   line-height:1.5;
 }
 .key-mode-note strong{color:#FFE2A6;font-family:var(--mono);}
+.key-mode-switch{
+  display:flex;
+  gap:8px;
+  margin:0 0 10px;
+  flex-wrap:wrap;
+}
+.key-mode-switch-btn{
+  border:1px solid rgba(255,255,255,.14);
+  background:rgba(255,255,255,.08);
+  color:rgba(246,241,231,.76);
+  border-radius:999px;
+  padding:8px 12px;
+  font-size:11px;
+  font-family:var(--mono);
+  cursor:pointer;
+  transition:all .15s;
+}
+.key-mode-switch-btn.active{
+  background:linear-gradient(135deg,#4777FF,#7D5DFF);
+  color:#fff;
+  border-color:rgba(255,255,255,.24);
+  box-shadow:0 12px 30px rgba(71,119,255,.18);
+}
 
 .keysig-title,.pattern-label{color:rgba(246,241,231,.48);}
 .keysig-row{gap:8px;align-items:stretch;}
@@ -923,6 +952,10 @@ input[type="range"]{accent-color:#7DB7FF;}
   <!-- key sig panel -->
   <div class="keysig-panel">
     <div class="keysig-title">Key Signature — 調号（和名 / Major / Minor）</div>
+    <div class="key-mode-switch">
+      <button class="key-mode-switch-btn active" id="key-mode-difficulty-btn" onclick="setKeyTrainingMode('difficulty')">難易度モード</button>
+      <button class="key-mode-switch-btn" id="key-mode-fixed-btn" onclick="setKeyTrainingMode('fixed')">調号セレクトモード</button>
+    </div>
     <div class="keysig-row" id="keysig-row"></div>
     <div class="key-mode-note" id="key-mode-note"><strong>KEY FIXED</strong>：選択した調号で出題します。</div>
     <div class="keysig-tip-head">
@@ -1239,6 +1272,7 @@ function trainingPoolForClef(clef){
 let clefMode='both',currentClef='treble',currentNote=null,answered=false;
 let selectedKeySig=KEY_SIGS[DEFAULT_KEY_INDEX];
 let questionKeySig=null;
+let keyTrainingMode='difficulty';
 let stats={correct:0,total:0,streak:0};
 let autoAdvance=true;
 let autoTimer=null;
@@ -1315,6 +1349,7 @@ function keySigScore(ks){
 }
 
 function chooseQuestionKeySig(){
+  if(keyTrainingMode==='fixed') return selectedKeySig;
   const lv=parseInt(difficultyLevel,10)||1;
   if(lv>=10){
     return KEY_SIGS[Math.floor(Math.random()*KEY_SIGS.length)];
@@ -1346,13 +1381,21 @@ function difficultyText(){
 
 
 function difficultyUsesAutoKey(){
-  return difficultyLevel>=9;
+  return keyTrainingMode==='difficulty' && difficultyLevel>=9;
+}
+
+function currentQuestionKeyLabel(){
+  const q=questionKeySig||selectedKeySig;
+  return q&&q.label?q.label:'—';
 }
 
 function keyModeText(){
-  if(difficultyLevel>=10) return '<strong>ALL KEYS</strong>：Lv.10のため、全調ランダムで出題します。上の調号選択は基準としては使いません。';
-  if(difficultyLevel>=9) return '<strong>RELATED KEYS</strong>：Lv.9のため、選択調号＋近親調で出題します。上の調号は基準キーです。';
-  return '<strong>KEY FIXED</strong>：選択した調号で出題します。';
+  if(keyTrainingMode==='fixed'){
+    return `<strong>KEY SELECT</strong>：調号セレクトモード。出題は選択中の ${selectedKeySig.label} に固定します。`;
+  }
+  if(difficultyLevel>=10) return `<strong>ALL KEYS</strong>：難易度モード Lv.10。今回の出題調号は ${currentQuestionKeyLabel()} です。`;
+  if(difficultyLevel>=9) return `<strong>RELATED KEYS</strong>：難易度モード Lv.9。基準 ${selectedKeySig.label} から、今回の出題調号は ${currentQuestionKeyLabel()} です。`;
+  return `<strong>KEY FIXED</strong>：難易度モード Lv.${difficultyLevel}。Lv.1〜8は選択中の ${selectedKeySig.label} で固定します。`;
 }
 
 function updateKeySignaturePanelState(){
@@ -1360,7 +1403,30 @@ function updateKeySignaturePanelState(){
   const note=document.getElementById('key-mode-note');
   const auto=difficultyUsesAutoKey();
   if(panel) panel.classList.toggle('auto-key-mode',auto);
+  document.querySelectorAll('.ks-btn').forEach(btn=>btn.classList.remove('current-question-key'));
+  const q=questionKeySig||selectedKeySig;
+  if(auto && q){
+    const idx=KEY_SIGS.indexOf(q);
+    const btn=document.querySelector(`.ks-btn[data-key-index="${idx}"]`);
+    if(btn) btn.classList.add('current-question-key');
+  }
   if(note) note.innerHTML=keyModeText();
+  const dBtn=document.getElementById('key-mode-difficulty-btn');
+  const fBtn=document.getElementById('key-mode-fixed-btn');
+  if(dBtn) dBtn.classList.toggle('active',keyTrainingMode==='difficulty');
+  if(fBtn) fBtn.classList.toggle('active',keyTrainingMode==='fixed');
+}
+
+function setKeyTrainingMode(mode){
+  keyTrainingMode=(mode==='fixed')?'fixed':'difficulty';
+  localStorage.setItem('musicTrainerKeyTrainingMode',keyTrainingMode);
+  updateKeySignaturePanelState();
+  nextQuestion();
+}
+
+function initKeyTrainingMode(){
+  keyTrainingMode=localStorage.getItem('musicTrainerKeyTrainingMode')==='fixed'?'fixed':'difficulty';
+  updateKeySignaturePanelState();
 }
 
 
@@ -1704,6 +1770,7 @@ function buildKeySigUI(){
   row.innerHTML='';
   KEY_SIGS.forEach((ks,i)=>{
     const b=document.createElement('button');
+    b.setAttribute("data-key-index",String(idx));
     b.className='ks-btn'+(i===DEFAULT_KEY_INDEX?' active':'');
     b.innerHTML=`<span class="ks-jp">${ks.jp}</span><span class="ks-major">${ks.major}</span><span class="ks-minor">${ks.minor}</span>`;
     b.onclick=()=>{
@@ -3089,6 +3156,7 @@ function nextQuestion(){
   renderKeyboard(null);
   const clefJP=currentClef==='treble'?'ト音記号':'ヘ音記号';
   document.getElementById('clef-label').textContent=(currentClef==='treble'?'TREBLE CLEF':'BASS CLEF')+' — '+clefJP+(questionMode==='chordseq'?' / CHORD SEQ':' / MELODY SEQ')+' / '+activeKeySig().label;
+  updateKeySignaturePanelState();
   updateKeyTip();
   updateChordPanel();
   resetQuestionTiming();
@@ -4613,6 +4681,7 @@ function initApp(){
   appInitialized=true;
 
   buildKeySigUI();
+  initKeyTrainingMode();
   initFiveFingerMode();
   initSequenceLength();
   initDifficultyLevel();
