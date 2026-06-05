@@ -1261,11 +1261,21 @@ const BASS_POOL=[
 // Lv.1-3 should not generate the extreme low B1 in bass clef.
 // The previous build could show a low シ at the edge of the keyboard, which felt unplayable on mobile.
 function trainingPoolForClef(clef){
-  const base=(clef==='bass'?BASS_POOL:TREBLE_POOL).map(n=>({...n}));
+  let base=(clef==='bass'?BASS_POOL:TREBLE_POOL).map(n=>clampNoteToPlayableMidi({...n}));
+  // Remove duplicated physical pitches after clamping.
+  const seen=new Set();
+  base=base.filter(n=>{
+    const k=pitchKey(n);
+    if(seen.has(k)) return false;
+    seen.add(k);
+    return isPlayableMidiNote(n);
+  });
   const lv=parseInt(difficultyLevel,10)||1;
-  if(clef==='bass' && lv<=3){
+  if(clef==='bass'){
+    // Even at high difficulty, do not generate below C2.
+    // B0/B1-like results are visually confusing and can be unplayable on mobile.
     const min=noteToMidi({n:'C',o:2});
-    return base.filter(n=>noteToMidi(n)>=min);
+    base=base.filter(n=>noteToMidi(n)>=min);
   }
   return base;
 }
@@ -1846,6 +1856,29 @@ function noteToMidi(note){
   if(aks.sharps.includes(note.n)) acc=1;
   if(aks.flats.includes(note.n)) acc=-1;
   return (note.o+1)*12 + semis[note.n] + acc;
+}
+
+
+const PLAYABLE_MIN_MIDI=36; // C2. Avoid unplayable B0/B1 edge on mobile training keyboard.
+const PLAYABLE_MAX_MIDI=96; // C7.
+
+function clampNoteToPlayableMidi(note){
+  if(!note) return note;
+  const out={...note};
+  let guard=0;
+  while(noteToMidi(out)<PLAYABLE_MIN_MIDI && guard++<12) out.o++;
+  guard=0;
+  while(noteToMidi(out)>PLAYABLE_MAX_MIDI && guard++<12) out.o--;
+  return out;
+}
+
+function isPlayableMidiNote(note){
+  const m=noteToMidi(note);
+  return m>=PLAYABLE_MIN_MIDI && m<=PLAYABLE_MAX_MIDI;
+}
+
+function clampNoteArrayToPlayable(notes){
+  return (notes||[]).map(clampNoteToPlayableMidi);
 }
 
 function pitchKey(note){
@@ -2462,7 +2495,7 @@ function generateChordQuestionSafe(){
   }
 
   const ch=generateChordQuestion();
-  ch.notes=makeUniquePlayableWindow(currentChordSize||targetSize);
+  ch.notes=clampNoteArrayToPlayable(makeUniquePlayableWindow(currentChordSize||targetSize));
   ch.letters=[...new Set(ch.notes.map(n=>n.n))];
   ch.voicingLabel='Playable';
   ch.label=ch.label.replace('Large Spread','Playable');
@@ -2961,7 +2994,7 @@ function generateChordSequenceQuestion(){
     chord.seqNo=i+1;
     seq.push(chord);
   }
-  return seq;
+  return clampNoteArrayToPlayable(seq).filter(isPlayableMidiNote);
 }
 
 function chordSequenceCurrent(){
@@ -3047,7 +3080,7 @@ function generateSequenceQuestion(){
       last=pickMelodyNext(options,last,difficultyLevel);
       seq.push({...last});
     }
-    return seq;
+    return clampNoteArrayToPlayable(seq).filter(isPlayableMidiNote);
   }
 
   const seq=[];
@@ -3124,14 +3157,19 @@ function nextQuestion(){
   const pool=trainingPoolForClef(currentClef);
 
   if(questionMode==='chordseq'){
-    currentChordSequence=generateChordSequenceQuestion();
+    currentChordSequence=generateChordSequenceQuestion().map(ch=>{
+      ch.notes=clampNoteArrayToPlayable(ch.notes);
+      ch.letters=[...new Set(ch.notes.map(n=>n.n))];
+      return ch;
+    });
     currentChord=currentChordSequence[0];
     currentNote=currentChord.notes[0];
   }else if(questionMode==='sequence'){
-    currentSequence=generateSequenceQuestion();
+    currentSequence=clampNoteArrayToPlayable(generateSequenceQuestion()).filter(isPlayableMidiNote);
+    if(!currentSequence.length) currentSequence=[clampNoteToPlayableMidi(pool[Math.floor(Math.random()*pool.length)])];
     currentNote=currentSequence[0];
   }else{
-    currentNote=pool[Math.floor(Math.random()*pool.length)];
+    currentNote=clampNoteToPlayableMidi(pool[Math.floor(Math.random()*pool.length)]);
   }
   keyboardAutoPositionPending=true;
 
@@ -3833,8 +3871,10 @@ function renderKeyboard(answerNote,wrongNote=[]){
   }
   // If anything falls on the B1 / A#1 edge (ex. C♭2), ensure octave 1 is visible.
   // If a future high-level setting ever creates B0/A#0, extend one more octave instead of showing an unplayable note.
-  if(allRelevant.some(n=>noteToMidi(n) <= 35)) minOct=1;
-  if(allRelevant.some(n=>noteToMidi(n) < 24)) minOct=0;
+  // Keep the mobile keyboard at C2 minimum. The generator now prevents unplayable lower notes.
+  if(allRelevant.some(n=>noteToMidi(n) < PLAYABLE_MIN_MIDI)){
+    console.warn('Unplayable low note clamped/ignored', allRelevant.filter(n=>noteToMidi(n)<PLAYABLE_MIN_MIDI));
+  }
   // If anything reaches C7 or above, ensure octave 7 is available.
   if(allRelevant.some(n=>noteToMidi(n) >= 96)) maxOct=7;
 
