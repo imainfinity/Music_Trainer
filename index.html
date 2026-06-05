@@ -1254,6 +1254,7 @@ let currentBundleStartedAt=0;
 let currentAttemptFirstInputAt=0;
 let currentAttemptKeyTimes=[];
 let lastAttemptFirstInputAt=0;
+let lastInputCompletedAt=0;
 let trainingMode='jikkuri';
 let tipAssistTimer=null;
 let tipAssistShown=false;
@@ -3847,12 +3848,14 @@ function resetQuestionTiming(){
   currentAttemptFirstInputAt=0;
   currentAttemptKeyTimes=[];
   lastAttemptFirstInputAt=0;
+  lastInputCompletedAt=0;
 }
 
 function startBundleTiming(){
   currentBundleStartedAt=performance.now();
   currentAttemptFirstInputAt=0;
   currentAttemptKeyTimes=[];
+  // Keep lastInputCompletedAt. It is required for Melody Seq Gap.
 }
 
 function markFirstInput(){
@@ -3884,11 +3887,20 @@ function computeAttemptTiming(){
   const inputSec=Math.max(0,Math.round((now-first)/100)/10);
   const totalSec=Math.max(0,Math.round((now-start)/100)/10);
   let gapSec=null;
+
   if(questionMode==='chordseq'){
+    // Chord Seq Gap = average interval inside the bundle:
+    // 1st key -> 2nd key -> 3rd key...
     gapSec=averageInternalGap(currentAttemptKeyTimes);
-  }else if(lastAttemptFirstInputAt){
-    gapSec=Math.max(0,Math.round((first-lastAttemptFirstInputAt)/100)/10);
+  }else{
+    // Melody Seq Gap = previous answer completed -> current key press.
+    // This must not use the current bundle start time, otherwise it collapses to 0.00s.
+    if(lastInputCompletedAt){
+      gapSec=Math.max(0,Math.round((first-lastInputCompletedAt)/10)/100);
+    }
+    lastInputCompletedAt=now;
   }
+
   lastAttemptFirstInputAt=first;
   return {readSec,inputSec,gapSec,totalSec};
 }
