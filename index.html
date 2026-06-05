@@ -926,15 +926,6 @@ input[type="range"]{accent-color:#7DB7FF;}
     <div id="auto-toggle" onclick="toggleAuto()" style="width:36px;height:20px;border-radius:10px;background:#6AA3E8;cursor:pointer;position:relative;transition:background .2s;">
       <div id="auto-knob" style="width:16px;height:16px;border-radius:50%;background:#fff;position:absolute;top:2px;left:18px;transition:left .2s;"></div>
     </div>
-    <div style="display:flex;align-items:center;gap:4px;margin-left:8px;">
-      <span style="font-size:10px;font-family:'DM Mono',monospace;color:#9A958F;letter-spacing:.05em;">SPEED</span>
-      <div style="display:flex;gap:3px;">
-        <button onclick="setFlashSpeed('slow')"  id="spd-slow"  style="font-size:10px;font-family:'DM Mono',monospace;padding:2px 7px;border-radius:6px;border:.5px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);color:#9A958F;cursor:pointer;">SLOW</button>
-        <button onclick="setFlashSpeed('normal')" id="spd-normal" style="font-size:10px;font-family:'DM Mono',monospace;padding:2px 7px;border-radius:6px;border:.5px solid #6AA3E8;background:#6AA3E8;color:#fff;font-weight:500;cursor:pointer;">NORM</button>
-        <button onclick="setFlashSpeed('fast')"  id="spd-fast"  style="font-size:10px;font-family:'DM Mono',monospace;padding:2px 7px;border-radius:6px;border:.5px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);color:#9A958F;cursor:pointer;">FAST</button>
-        <button onclick="setFlashSpeed('flash')" id="spd-flash" style="font-size:10px;font-family:'DM Mono',monospace;padding:2px 7px;border-radius:6px;border:.5px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);color:#9A958F;cursor:pointer;">FLASH</button>
-      </div>
-    </div>
   </div>
 </nav>
 
@@ -1081,6 +1072,22 @@ input[type="range"]{accent-color:#7DB7FF;}
       </div>
       <div class="practice-subline" id="practice-log-summary">LOG OFF / Timer ready</div>
       <div class="challenge-log" id="challenge-log"></div>
+    </div>
+  </div>
+
+  <div style="margin-bottom:10px;">
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:rgba(255,255,255,.055);border:.5px solid rgba(255,255,255,.1);border-radius:12px 12px 0 0;">
+      <span style="font-size:11px;font-family:'DM Mono',monospace;color:#9A958F;letter-spacing:.06em;white-space:nowrap;">TIME LIMIT / NOTE</span>
+      <div style="display:flex;gap:5px;flex:1;">
+        <button onclick="setFlashSpeed('slow')"  id="spd-slow"  style="flex:1;font-size:11px;font-family:'DM Mono',monospace;padding:5px 4px;border-radius:8px;border:.5px solid rgba(255,255,255,.15);background:rgba(255,255,255,.07);color:#9A958F;cursor:pointer;">3s</button>
+        <button onclick="setFlashSpeed('normal')" id="spd-normal" style="flex:1;font-size:11px;font-family:'DM Mono',monospace;padding:5px 4px;border-radius:8px;border:.5px solid rgba(255,255,255,.15);background:rgba(255,255,255,.07);color:#9A958F;cursor:pointer;">2s</button>
+        <button onclick="setFlashSpeed('fast')"  id="spd-fast"  style="flex:1;font-size:11px;font-family:'DM Mono',monospace;padding:5px 4px;border-radius:8px;border:.5px solid rgba(255,255,255,.15);background:rgba(255,255,255,.07);color:#9A958F;cursor:pointer;">1s</button>
+        <button onclick="setFlashSpeed('flash')" id="spd-flash" style="flex:1;font-size:11px;font-family:'DM Mono',monospace;padding:5px 4px;border-radius:8px;border:.5px solid rgba(255,255,255,.15);background:rgba(255,255,255,.07);color:#9A958F;cursor:pointer;">0.5s</button>
+        <button onclick="setFlashSpeed('off')"   id="spd-off"   style="flex:1;font-size:11px;font-family:'DM Mono',monospace;padding:5px 4px;border-radius:8px;border:.5px solid #6AA3E8;background:#6AA3E8;color:#fff;font-weight:600;cursor:pointer;">OFF</button>
+      </div>
+    </div>
+    <div id="flash-countdown-bar-wrap" style="height:4px;background:rgba(255,255,255,.08);border-radius:0 0 12px 12px;overflow:hidden;">
+      <div id="flash-countdown-bar" style="height:100%;width:100%;background:#6AA3E8;transition:width linear;"></div>
     </div>
   </div>
 
@@ -1354,17 +1361,49 @@ let soundEnabled=false;
 let soundUnlocked=false;
 
 let flashSpeed='normal';
-function flashDelayFor(correct){
-  const map={slow:correct?1400:1800,normal:correct?700:1000,fast:correct?200:350,flash:correct?60:120};
-  return map[flashSpeed]||700;
+let flashCountdownTimer=null;
+
+// Time limit per note before auto-wrong
+function flashTimeLimit(){
+  const map={slow:3000,normal:2000,fast:1000,flash:500};
+  return map[flashSpeed]||0; // 0 = no limit
 }
-function isFlashMode(){return flashSpeed==='fast'||flashSpeed==='flash';}
+// Delay after answer before next note (short — just enough to see result)
+function flashDelayFor(correct){
+  if(flashSpeed==='slow')   return correct?600:900;
+  if(flashSpeed==='normal') return correct?400:600;
+  if(flashSpeed==='fast')   return correct?200:300;
+  if(flashSpeed==='flash')  return correct?80:150;
+  return 500;
+}
+function isFlashMode(){return flashSpeed!=='normal'&&flashSpeed!=='slow';}
+
+function startFlashCountdown(){
+  clearTimeout(flashCountdownTimer);
+  const limit=flashTimeLimit();
+  if(!limit||answered) return;
+  animateCountdownBar(limit);
+  flashCountdownTimer=setTimeout(()=>{
+    if(answered) return;
+    // Time's up — force wrong answer with current expected note
+    const expected=currentNote||(coreQuestion&&coreQuestion.items&&coreQuestion.items[coreQuestion.index]);
+    if(!expected) return;
+    selectNote('—','—'); // blank answer triggers wrong
+  }, limit);
+}
+
+function cancelFlashCountdown(){
+  clearTimeout(flashCountdownTimer);
+  flashCountdownTimer=null;
+  const bar=document.getElementById('flash-countdown-bar');
+  if(bar){bar.style.transition='none';bar.style.width='100%';}
+}
 
 /* ── Canvas fast renderer ── */
 function renderStaffCanvas(){
   const canvas=document.getElementById('staff-canvas');
   if(!canvas||questionMode!=='sequence'||!currentSequence.length) return false;
-  const W=canvas.offsetWidth||canvas.parentElement.offsetWidth||560;
+  const W=canvas.offsetWidth||canvas.parentElement?.offsetWidth||canvas.closest('.staff-card')?.offsetWidth||560;
   const PR=Math.min(window.devicePixelRatio||1,2);
   if(canvas.dataset.w!==String(W)||canvas.dataset.pr!==String(PR)){
     canvas.width=W*PR; canvas.height=154*PR;
@@ -1504,6 +1543,9 @@ function renderStaffFast(){
   const canvas=document.getElementById('staff-canvas');
   const svg=document.getElementById('staff-svg');
   if(!canvas||!svg) return false;
+  // Ensure canvas has a real width before using it
+  const w=canvas.offsetWidth||canvas.parentElement?.offsetWidth||0;
+  if(w<10) return false; // fallback to SVG if layout not ready
   const ok=renderStaffCanvas();
   if(ok){
     svg.style.display='none';
@@ -1521,17 +1563,38 @@ function restoreSvgStaff(){
 
 function setFlashSpeed(s){
   flashSpeed=s;
-  ['slow','normal','fast','flash'].forEach(k=>{
+  ['slow','normal','fast','flash','off'].forEach(k=>{
     const b=document.getElementById('spd-'+k);
     if(!b) return;
-    if(k===s){b.style.background='#6AA3E8';b.style.borderColor='#6AA3E8';b.style.color='#fff';b.style.fontWeight='500';}
-    else{b.style.background='rgba(255,255,255,.08)';b.style.borderColor='rgba(255,255,255,.2)';b.style.color='#9A958F';b.style.fontWeight='400';}
+    if(k===s){b.style.background='#6AA3E8';b.style.borderColor='#6AA3E8';b.style.color='#fff';b.style.fontWeight='600';}
+    else{b.style.background='rgba(255,255,255,.07)';b.style.borderColor='rgba(255,255,255,.15)';b.style.color='#9A958F';b.style.fontWeight='400';}
   });
   const noTrans=isFlashMode();
   let sty=document.getElementById('flash-speed-style');
   if(!sty){sty=document.createElement('style');sty.id='flash-speed-style';document.head.appendChild(sty);}
   sty.textContent=noTrans?'.note-btn,.keyboard-wrap *{transition:none!important;}':'';
   if(!noTrans) restoreSvgStaff();
+  cancelFlashCountdown();
+  // Reset bar
+  const bar=document.getElementById('flash-countdown-bar');
+  if(bar){bar.style.transition='none';bar.style.width='100%';bar.style.background=s==='off'?'rgba(255,255,255,.1)':'#6AA3E8';}
+}
+
+function animateCountdownBar(limitMs){
+  const bar=document.getElementById('flash-countdown-bar');
+  if(!bar||!limitMs) return;
+  bar.style.transition='none';
+  bar.style.width='100%';
+  bar.style.background='#6AA3E8';
+  requestAnimationFrame(()=>{
+    requestAnimationFrame(()=>{
+      bar.style.transition=`width ${limitMs}ms linear`;
+      bar.style.width='0%';
+      // Color shift: blue→amber→red as time runs out
+      setTimeout(()=>{if(bar.style.width!=='100%')bar.style.background='#F7B955';},limitMs*0.5);
+      setTimeout(()=>{if(bar.style.width!=='100%')bar.style.background='#FF6B76';},limitMs*0.8);
+    });
+  });
 }
 
 function toggleAuto(){
@@ -1658,8 +1721,9 @@ function setDifficultyLevel(v,skipNext=false){
 }
 
 function initDifficultyLevel(){
-  const saved=parseInt(localStorage.getItem('musicTrainerDifficultyLevel')||'1',10);
-  setDifficultyLevel(saved, true);
+  // Always start from Lv.1 on first load — don't carry over from previous session
+  localStorage.removeItem('musicTrainerDifficultyLevel');
+  setDifficultyLevel(1, true);
 }
 
 function tryAutoLevelUp(ok,total){
@@ -2916,6 +2980,7 @@ function coreAdvanceToNextChordBundleSafe(){
       fb.className='feedback-bar wait';
     }
     scheduleTipAssist && scheduleTipAssist();
+    startFlashCountdown();
   }catch(err){
     console.error('coreAdvanceToNextChordBundleSafe failed:',err);
     reviewingIdx=null;
@@ -3523,6 +3588,7 @@ function physicalMidiOfInput(letter){
 }
 
 function pitchMatchesExpected(letter,expected){
+  if(!letter||letter==='—'||letter==='') return false;
   const inputMidi=physicalMidiOfInput(letter);
   if(inputMidi!==null && expected) return inputMidi===noteToMidi(expected);
   return expected && letter===expected.n;
@@ -3546,6 +3612,7 @@ function selectNote(n,displayLabel=n){
   if(questionMode==='sequence'){
     if(answered) return;
     const expected=sequenceCurrentNote();
+    cancelFlashCountdown();
     markFirstInput();
     const timing=computeAttemptTiming();
     const pressedLabel=inputDisplayForHistory(n,displayLabel);
@@ -3605,9 +3672,15 @@ function selectNote(n,displayLabel=n){
       if(history.length>10) history.pop();
       renderHistory();
       const nextBtn=document.getElementById('next-btn');
-      // Always show next button after last note — user confirms result before moving on
-      if(nextBtn){ nextBtn.style.display='block'; nextBtn.textContent='次の問題へ / Next →'; }
-      clearTimeout(autoTimer);
+      if(autoAdvance && !timeAttackActive){
+        // Auto-advance ON: proceed after delay
+        if(nextBtn) nextBtn.style.display='none';
+        scheduleNextQuestionAfterAnswer(flashDelayFor(ok===currentSequence.length));
+      }else{
+        // Auto-advance OFF (or time attack ended): show manual next button
+        if(nextBtn){ nextBtn.style.display='block'; nextBtn.textContent='次の問題へ / Next →'; }
+        clearTimeout(autoTimer);
+      }
     }else{
       sequenceIndex++;
       currentNote=sequenceCurrentNote();
@@ -3615,6 +3688,7 @@ function selectNote(n,displayLabel=n){
       startBundleTiming();
       updateSequenceFeedback();
       scheduleTipAssist();
+      startFlashCountdown();
     }
     return;
   }
@@ -5425,6 +5499,7 @@ function coreFinishSet(){
 function nextQuestion(){
   clearTimeout(coreAutoMoveTimer);
   clearTimeout(autoTimer);
+  cancelFlashCountdown();
   cancelChordAutoSubmit && cancelChordAutoSubmit();
   answered=false;
   reviewingIdx=null;
@@ -5495,6 +5570,7 @@ function setChordVoicing(mode){
 function selectNote(n,displayLabel=n){
   hideTipAssist && hideTipAssist();
   if(!coreQuestion || coreQuestion.mode!=='sequence' || answered) return;
+  cancelFlashCountdown();
   coreMarkInput();
   const item=coreQuestion.items[coreQuestion.index];
   if(!item) return; // guard: index out of range
@@ -5547,8 +5623,13 @@ function selectNote(n,displayLabel=n){
     answered=true; // block further input
     sequenceIndex=coreQuestion.items.length;
     const nb=document.getElementById('next-btn');
-    if(nb){nb.style.display='block';nb.textContent='次の問題へ / Next →';}
-    clearTimeout(autoTimer);
+    if(autoAdvance && !timeAttackActive){
+      if(nb) nb.style.display='none';
+      scheduleNextQuestionAfterAnswer(flashDelayFor(true));
+    }else{
+      if(nb){nb.style.display='block';nb.textContent='次の問題へ / Next →';}
+      clearTimeout(autoTimer);
+    }
     return;
   }
   setTimeout(()=>{
