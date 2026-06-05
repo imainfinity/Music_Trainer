@@ -926,6 +926,15 @@ input[type="range"]{accent-color:#7DB7FF;}
     <div id="auto-toggle" onclick="toggleAuto()" style="width:36px;height:20px;border-radius:10px;background:#6AA3E8;cursor:pointer;position:relative;transition:background .2s;">
       <div id="auto-knob" style="width:16px;height:16px;border-radius:50%;background:#fff;position:absolute;top:2px;left:18px;transition:left .2s;"></div>
     </div>
+    <div style="display:flex;align-items:center;gap:4px;margin-left:8px;">
+      <span style="font-size:10px;font-family:'DM Mono',monospace;color:#9A958F;letter-spacing:.05em;">SPEED</span>
+      <div style="display:flex;gap:3px;">
+        <button onclick="setFlashSpeed('slow')"  id="spd-slow"  style="font-size:10px;font-family:'DM Mono',monospace;padding:2px 7px;border-radius:6px;border:.5px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);color:#9A958F;cursor:pointer;">SLOW</button>
+        <button onclick="setFlashSpeed('normal')" id="spd-normal" style="font-size:10px;font-family:'DM Mono',monospace;padding:2px 7px;border-radius:6px;border:.5px solid #6AA3E8;background:#6AA3E8;color:#fff;font-weight:500;cursor:pointer;">NORM</button>
+        <button onclick="setFlashSpeed('fast')"  id="spd-fast"  style="font-size:10px;font-family:'DM Mono',monospace;padding:2px 7px;border-radius:6px;border:.5px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);color:#9A958F;cursor:pointer;">FAST</button>
+        <button onclick="setFlashSpeed('flash')" id="spd-flash" style="font-size:10px;font-family:'DM Mono',monospace;padding:2px 7px;border-radius:6px;border:.5px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);color:#9A958F;cursor:pointer;">FLASH</button>
+      </div>
+    </div>
   </div>
 </nav>
 
@@ -1078,6 +1087,7 @@ input[type="range"]{accent-color:#7DB7FF;}
   <div class="staff-card">
     <div class="clef-badge"><span class="clef-dot"></span><span id="clef-label">TREBLE CLEF — ト音記号</span></div>
     <svg class="staff" id="staff-svg" viewBox="0 -70 560 210" xmlns="http://www.w3.org/2000/svg"></svg>
+    <canvas id="staff-canvas" style="display:none;width:100%;border-radius:12px;" height="154"></canvas>
   </div>
 
   <button class="staff-skip-btn" onclick="nextQuestion()">次の問題へ / Skip →</button>
@@ -1342,6 +1352,187 @@ let chordVoicingMode='mixed';
 let lastKeyboardPitch=null;
 let soundEnabled=false;
 let soundUnlocked=false;
+
+let flashSpeed='normal';
+function flashDelayFor(correct){
+  const map={slow:correct?1400:1800,normal:correct?700:1000,fast:correct?200:350,flash:correct?60:120};
+  return map[flashSpeed]||700;
+}
+function isFlashMode(){return flashSpeed==='fast'||flashSpeed==='flash';}
+
+/* ── Canvas fast renderer ── */
+function renderStaffCanvas(){
+  const canvas=document.getElementById('staff-canvas');
+  if(!canvas||questionMode!=='sequence'||!currentSequence.length) return false;
+  const W=canvas.offsetWidth||canvas.parentElement.offsetWidth||560;
+  const PR=Math.min(window.devicePixelRatio||1,2);
+  if(canvas.dataset.w!==String(W)||canvas.dataset.pr!==String(PR)){
+    canvas.width=W*PR; canvas.height=154*PR;
+    canvas.dataset.w=W; canvas.dataset.pr=PR;
+  }
+  const ctx=canvas.getContext('2d');
+  const scale=W/560*PR;
+  ctx.setTransform(scale,0,0,scale,0,0);
+  ctx.clearRect(0,0,560,154);
+
+  const ls=12, topLineY=28, leftX=56, rightX=540;
+  const bottomLine=topLineY+4*ls;
+  const ks=activeKeySig();
+  const accCount=Math.max(ks.sharps.length,ks.flats.length);
+  const keySigEndX=accCount>0?(62+accCount*17+12):86;
+  const contentLeft=Math.max(124,keySigEndX+28);
+  const contentRight=rightX-16;
+
+  // Background
+  ctx.fillStyle=getComputedStyle(document.documentElement).getPropertyValue('--bg')||'#F7F5F0';
+  ctx.fillRect(0,0,560,154);
+
+  // Staff lines
+  ctx.strokeStyle='rgba(0,0,0,0.55)';
+  ctx.lineWidth=1.1;
+  for(let i=0;i<5;i++){
+    const y=topLineY+i*ls;
+    ctx.beginPath(); ctx.moveTo(leftX,y); ctx.lineTo(rightX,y); ctx.stroke();
+  }
+
+  // Clef glyph
+  ctx.fillStyle='#1A1714';
+  ctx.font=currentClef==='treble'?'66px serif':'56px serif';
+  ctx.fillText(currentClef==='treble'?'𝄞':'𝄢',10,currentClef==='treble'?bottomLine+2:bottomLine-6);
+
+  // Key sig
+  const KEYSIG_TREBLE_S=[{n:'F',o:5},{n:'C',o:5},{n:'G',o:5},{n:'D',o:5},{n:'A',o:4},{n:'E',o:5},{n:'B',o:4}];
+  const KEYSIG_TREBLE_F=[{n:'B',o:4},{n:'E',o:5},{n:'A',o:4},{n:'D',o:5},{n:'G',o:4},{n:'C',o:5},{n:'F',o:4}];
+  const KEYSIG_BASS_S=[{n:'F',o:3},{n:'C',o:3},{n:'G',o:3},{n:'D',o:3},{n:'A',o:2},{n:'E',o:3},{n:'B',o:2}];
+  const KEYSIG_BASS_F=[{n:'B',o:2},{n:'E',o:3},{n:'A',o:2},{n:'D',o:3},{n:'G',o:2},{n:'C',o:3},{n:'F',o:2}];
+  ctx.fillStyle='#1A1714'; ctx.font='14px serif';
+  let kx=62;
+  if(ks.sharps.length){
+    const pos=currentClef==='treble'?KEYSIG_TREBLE_S:KEYSIG_BASS_S;
+    ks.sharps.forEach((_,i)=>{
+      if(pos[i]){const y=getNoteY(pos[i],currentClef,topLineY,ls);ctx.fillText('♯',kx,y+5);}
+      kx+=17;
+    });
+  }
+  if(ks.flats.length){
+    const pos=currentClef==='treble'?KEYSIG_TREBLE_F:KEYSIG_BASS_F;
+    ks.flats.forEach((_,i)=>{
+      if(pos[i]){const y=getNoteY(pos[i],currentClef,topLineY,ls);ctx.fillText('♭',kx,y+5);}
+      kx+=17;
+    });
+  }
+
+  // Notes
+  const seqStart=Math.max(contentLeft,132);
+  const seqRight=contentRight;
+  const seqAvail=Math.max(140,seqRight-seqStart);
+  const n=currentSequence.length;
+  const pageStart=visiblePageStart?visiblePageStart(Math.min(sequenceIndex,n-1)):0;
+  const slice=currentSequence.slice(pageStart,pageStart+5);
+  const gap=slice.length>1?Math.min(74,seqAvail/(slice.length-1)):58;
+
+  slice.forEach((note,idx)=>{
+    const actualIdx=pageStart+idx;
+    const x=slice.length===1?(seqStart+seqRight)/2:(seqStart+idx*gap);
+    const y=getNoteY(note,currentClef,topLineY,ls);
+    const lw=28;
+
+    // Ledger lines above
+    if(y<topLineY){
+      ctx.strokeStyle='rgba(0,0,0,0.4)'; ctx.lineWidth=1.2;
+      for(let ly=topLineY-ls;ly>=y-ls/2;ly-=ls){
+        ctx.beginPath(); ctx.moveTo(x-lw/2,ly); ctx.lineTo(x+lw/2,ly); ctx.stroke();
+      }
+    }
+    // Ledger lines below
+    if(y>bottomLine){
+      ctx.strokeStyle='rgba(0,0,0,0.4)'; ctx.lineWidth=1.2;
+      for(let ly=bottomLine+ls;ly<=y+ls/2;ly+=ls){
+        ctx.beginPath(); ctx.moveTo(x-lw/2,ly); ctx.lineTo(x+lw/2,ly); ctx.stroke();
+      }
+    }
+
+    // Color
+    let fill,stroke;
+    if(actualIdx<sequenceIndex){
+      fill=sequenceResults[actualIdx]&&sequenceResults[actualIdx].correct?'#23A45A':'#C43B4B';
+      stroke=fill;
+    }else if(actualIdx===sequenceIndex){
+      fill='#2D5FA3'; stroke='#102F62';
+      // ring
+      ctx.strokeStyle='rgba(45,95,163,0.22)'; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.arc(x,y,16,0,Math.PI*2); ctx.stroke();
+    }else{
+      fill='#7C8AA0'; stroke='#657184';
+    }
+
+    // Stem
+    const midLineY=topLineY+2*ls;
+    const stemUp=y>midLineY;
+    const sx=stemUp?x+11:x-9;
+    ctx.strokeStyle=fill; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.moveTo(sx,y); ctx.lineTo(sx,stemUp?y-34:y+34); ctx.stroke();
+
+    // Note head (ellipse via transform)
+    ctx.save();
+    ctx.translate(x,y);
+    ctx.rotate(-18*Math.PI/180);
+    ctx.fillStyle=fill;
+    ctx.strokeStyle=stroke; ctx.lineWidth=1.2;
+    ctx.beginPath();
+    ctx.ellipse(0,0,10.6,8.1,0,0,Math.PI*2);
+    ctx.fill(); ctx.stroke();
+    // shine
+    ctx.fillStyle='rgba(255,255,255,0.18)';
+    ctx.beginPath(); ctx.ellipse(-2.2,-1.7,3.6,2.2,0,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+  });
+
+  // Page indicator
+  if(n>5){
+    const pg=Math.floor(pageStart/5)+1;
+    const pgMax=Math.ceil(n/5);
+    ctx.fillStyle='#5A5550'; ctx.font='bold 11px DM Mono,monospace';
+    ctx.fillText(`PAGE ${pg}/${pgMax}  ${Math.min(sequenceIndex+1,n)}/${n}`,contentRight-136,topLineY-10);
+  }
+
+  return true;
+}
+
+function renderStaffFast(){
+  if(!isFlashMode()) return false;
+  const canvas=document.getElementById('staff-canvas');
+  const svg=document.getElementById('staff-svg');
+  if(!canvas||!svg) return false;
+  const ok=renderStaffCanvas();
+  if(ok){
+    svg.style.display='none';
+    canvas.style.display='block';
+  }
+  return ok;
+}
+
+function restoreSvgStaff(){
+  const canvas=document.getElementById('staff-canvas');
+  const svg=document.getElementById('staff-svg');
+  if(canvas) canvas.style.display='none';
+  if(svg) svg.style.display='';
+}
+
+function setFlashSpeed(s){
+  flashSpeed=s;
+  ['slow','normal','fast','flash'].forEach(k=>{
+    const b=document.getElementById('spd-'+k);
+    if(!b) return;
+    if(k===s){b.style.background='#6AA3E8';b.style.borderColor='#6AA3E8';b.style.color='#fff';b.style.fontWeight='500';}
+    else{b.style.background='rgba(255,255,255,.08)';b.style.borderColor='rgba(255,255,255,.2)';b.style.color='#9A958F';b.style.fontWeight='400';}
+  });
+  const noTrans=isFlashMode();
+  let sty=document.getElementById('flash-speed-style');
+  if(!sty){sty=document.createElement('style');sty.id='flash-speed-style';document.head.appendChild(sty);}
+  sty.textContent=noTrans?'.note-btn,.keyboard-wrap *{transition:none!important;}':'';
+  if(!noTrans) restoreSvgStaff();
+}
 
 function toggleAuto(){
   autoAdvance=!autoAdvance;
@@ -2673,7 +2864,7 @@ function safeFinishChordSequence(seqLen){
   const nextBtn=document.getElementById('next-btn');
   if(shouldAutoMoveNext()){
     if(nextBtn) nextBtn.style.display='none';
-    scheduleNextQuestionAfterAnswer(timeAttackActive?850:1200);
+    scheduleNextQuestionAfterAnswer(timeAttackActive?200:flashDelayFor(ok===seqLen));
   }else{
     if(nextBtn) nextBtn.style.display='block';
   }
@@ -2937,7 +3128,7 @@ function submitChordAnswer(autoTriggered=false){
   const nextBtn=document.getElementById('next-btn');
   if(shouldAutoMoveNext()){
     nextBtn.style.display='none';
-    scheduleNextQuestionAfterAnswer(timeAttackActive?450:1500);
+    scheduleNextQuestionAfterAnswer(timeAttackActive?150:flashDelayFor(correct));
   }else{
     nextBtn.style.display='block';
   }
@@ -3395,14 +3586,16 @@ function selectNote(n,displayLabel=n){
       if(en===expected.n) b.classList.add('correct');
     });
 
-    sequenceIndex++;
-    currentNote=sequenceCurrentNote();
-    renderStaff();
+    const isLastNote=(sequenceIndex+1>=currentSequence.length);
     renderKeyboard(expected,wrongKeyboardForInput(correct));
     updateStats();
 
-    if(sequenceIndex>=currentSequence.length){
-      answered=true;
+    if(isLastNote){
+      sequenceIndex=currentSequence.length;
+      currentNote=sequenceCurrentNote();
+      // Last note: same instant render as intermediate notes
+      answered=true; // Set immediately to block re-entry
+      if(!renderStaffFast()){ restoreSvgStaff(); renderStaff(); }
       const ok=sequenceResults.filter(r=>r&&r.correct).length;
       const fb=document.getElementById('feedback');
       const leveled=tryAutoLevelUp(ok,currentSequence.length);
@@ -3412,13 +3605,13 @@ function selectNote(n,displayLabel=n){
       if(history.length>10) history.pop();
       renderHistory();
       const nextBtn=document.getElementById('next-btn');
-      if(shouldAutoMoveNext()){
-        if(nextBtn) nextBtn.style.display='none';
-        scheduleNextQuestionAfterAnswer(timeAttackActive?850:1500);
-      }else{
-        nextBtn.style.display='block';
-      }
+      // Always show next button after last note — user confirms result before moving on
+      if(nextBtn){ nextBtn.style.display='block'; nextBtn.textContent='次の問題へ / Next →'; }
+      clearTimeout(autoTimer);
     }else{
+      sequenceIndex++;
+      currentNote=sequenceCurrentNote();
+      if(!renderStaffFast()) renderStaff();
       startBundleTiming();
       updateSequenceFeedback();
       scheduleTipAssist();
@@ -3460,7 +3653,7 @@ function selectNote(n,displayLabel=n){
   const nextBtn=document.getElementById('next-btn');
   if(shouldAutoMoveNext()){
     nextBtn.style.display='none';
-    scheduleNextQuestionAfterAnswer(timeAttackActive?450:1200);
+    scheduleNextQuestionAfterAnswer(timeAttackActive?150:flashDelayFor(correct));
   } else {
     nextBtn.style.display='block';
   }
@@ -5025,76 +5218,40 @@ function coreGenerateMelodyQuestion(){
   return {mode:'sequence',keySig:ks,clef:currentClef,items:notes,index:0,results:[]};
 }
 
-function coreGenerateChordBundle(pool, ks, size, anchorMidi=null){
-  // 5-finger mode: max span 12 semitones (one octave), anchored near previous bundle
-  const MAX_SPAN = fiveFingerMode ? 12 : 24;
-  const MAX_BUNDLE_JUMP = fiveFingerMode ? 7 : 24; // semitones between bundle roots
-
+function coreGenerateChordBundle(pool, ks, size){
   const prog=coreProgressionPools(pool);
   const chordTones=corePick(prog.filter(x=>x.length>=Math.min(size,3)).length?prog.filter(x=>x.length>=Math.min(size,3)):prog);
   let base=[...chordTones];
   if(!base.length) base=[...pool];
 
-  // Attempt up to 20 times to build a playable chord within span limit
-  for(let attempt=0; attempt<20; attempt++){
-    const notes=[];
-    const seen=new Set();
-    let guard=0;
-    while(notes.length<size && guard++<80){
-      let n={...corePick(base)};
-      const lv=parseInt(difficultyLevel,10)||1;
-      // Only allow octave displacement in non-five-finger mode
-      if(!fiveFingerMode && lv>=5 && Math.random()<0.45) n.o += Math.random()<0.5?1:-1;
-      n=coreClampOctave(n,ks);
-      const m=coreMidiFromWritten(n,ks);
-      if(m<CORE_MIN_MIDI||m>CORE_MAX_MIDI||seen.has(m)) continue;
-      // 5-finger: reject if this note would blow span beyond 12
-      if(fiveFingerMode && notes.length>0){
-        const lo=Math.min(...notes.map(x=>x.midi),m);
-        const hi=Math.max(...notes.map(x=>x.midi),m);
-        if(hi-lo>MAX_SPAN) continue;
-      }
-      // 5-finger: keep bundle root close to previous bundle anchor
-      if(fiveFingerMode && anchorMidi!==null && notes.length===0){
-        if(Math.abs(m-anchorMidi)>MAX_BUNDLE_JUMP) continue;
-      }
-      seen.add(m);
-      notes.push({...n,midi:m,label:coreNoteLabel(n,ks)});
-    }
-    // Fallback fill from pool within span
-    guard=0;
-    while(notes.length<size && guard++<100){
-      let n={...corePick(pool)};
-      n=coreClampOctave(n,ks);
-      const m=coreMidiFromWritten(n,ks);
-      if(seen.has(m)) continue;
-      if(fiveFingerMode && notes.length>0){
-        const lo=Math.min(...notes.map(x=>x.midi),m);
-        const hi=Math.max(...notes.map(x=>x.midi),m);
-        if(hi-lo>MAX_SPAN) continue;
-      }
-      seen.add(m);
-      notes.push({...n,midi:m,label:coreNoteLabel(n,ks)});
-    }
-    if(notes.length===size){
-      const lo=Math.min(...notes.map(x=>x.midi));
-      const hi=Math.max(...notes.map(x=>x.midi));
-      if(hi-lo<=MAX_SPAN){
-        notes.sort((a,b)=>a.midi-b.midi);
-        return {notes};
-      }
-    }
+  // Build unique MIDI chord tones first.
+  const notes=[];
+  const seen=new Set();
+  let guard=0;
+  while(notes.length<size && guard++<80){
+    let n={...corePick(base)};
+    const lv=parseInt(difficultyLevel,10)||1;
+    if(!fiveFingerMode && lv>=5 && Math.random()<0.45) n.o += Math.random()<0.5?1:-1;
+    n=coreClampOctave(n,ks);
+    const m=coreMidiFromWritten(n,ks);
+    if(m<CORE_MIN_MIDI||m>CORE_MAX_MIDI||seen.has(m)) continue;
+    seen.add(m);
+    notes.push({...n,midi:m,label:coreNoteLabel(n,ks)});
   }
 
-  // Last resort: pick consecutive semitones within one octave window
-  const sorted=pool.map(n=>({...n,midi:coreMidiFromWritten(n,ks)}))
-    .filter(n=>n.midi>=CORE_MIN_MIDI&&n.midi<=CORE_MAX_MIDI)
-    .sort((a,b)=>a.midi-b.midi);
-  const startIdx=Math.floor(Math.random()*Math.max(1,sorted.length-size));
-  const fallback=sorted.slice(startIdx,startIdx+size);
-  fallback.forEach(n=>{n.label=coreNoteLabel(n,ks);});
-  fallback.sort((a,b)=>a.midi-b.midi);
-  return {notes:fallback.length?fallback:sorted.slice(0,size)};
+  // Fallback fill from pool.
+  guard=0;
+  while(notes.length<size && guard++<100){
+    let n={...corePick(pool)};
+    n=coreClampOctave(n,ks);
+    const m=coreMidiFromWritten(n,ks);
+    if(seen.has(m)) continue;
+    seen.add(m);
+    notes.push({...n,midi:m,label:coreNoteLabel(n,ks)});
+  }
+
+  notes.sort((a,b)=>a.midi-b.midi);
+  return {notes};
 }
 
 function coreGenerateChordQuestion(){
@@ -5105,13 +5262,7 @@ function coreGenerateChordQuestion(){
   const len=coreResolveSeqLen();
   const size=coreResolveChordSize();
   const bundles=[];
-  let anchorMidi=null;
-  for(let i=0;i<len;i++){
-    const b=coreGenerateChordBundle(pool,ks,size,anchorMidi);
-    bundles.push(b);
-    // Next bundle anchors near this bundle's root (lowest note)
-    if(b.notes&&b.notes.length) anchorMidi=b.notes[0].midi;
-  }
+  for(let i=0;i<len;i++) bundles.push(coreGenerateChordBundle(pool,ks,size));
   const actualSize=(bundles[0]&&bundles[0].notes)?bundles[0].notes.length:size;
   return {mode:'chordseq',keySig:ks,clef:currentClef,bundles,index:0,results:[],chordSize:actualSize};
 }
@@ -5346,6 +5497,7 @@ function selectNote(n,displayLabel=n){
   if(!coreQuestion || coreQuestion.mode!=='sequence' || answered) return;
   coreMarkInput();
   const item=coreQuestion.items[coreQuestion.index];
+  if(!item) return; // guard: index out of range
   const pressedMidi = lastKeyboardPitch&&typeof lastKeyboardPitch.midi==='number'
     ? lastKeyboardPitch.midi
     : corePressedMidiFromNoteButton(n);
@@ -5392,8 +5544,11 @@ function selectNote(n,displayLabel=n){
 
   coreQuestion.index++;
   if(coreQuestion.index>=coreQuestion.items.length){
+    answered=true; // block further input
     sequenceIndex=coreQuestion.items.length;
-    setTimeout(()=>coreFinishSet(),450);
+    const nb=document.getElementById('next-btn');
+    if(nb){nb.style.display='block';nb.textContent='次の問題へ / Next →';}
+    clearTimeout(autoTimer);
     return;
   }
   setTimeout(()=>{
