@@ -4763,6 +4763,624 @@ function initMobilePracticeMode(){
   applyMobilePracticeMode();
 }
 
+
+/* ==================== CORE LOGIC REBUILD v2 ====================
+   Purpose:
+   - Use only two training modes internally: sequence / chordseq
+   - MIDI-based judging for accidentals and physical keyboard
+   - Playable range only
+   - Decouple question generation, judging, history, and save/log
+=============================================================== */
+
+const CORE_MIN_MIDI = 36;  // C2
+const CORE_MAX_MIDI = 96;  // C7
+let coreQuestion = null;
+let coreAttemptStartAt = 0;
+let coreFirstInputAt = 0;
+let coreKeyTimes = [];
+let coreLastCompletedAt = 0;
+let coreAutoMoveTimer = null;
+
+function coreNow(){ return performance.now(); }
+function coreRound1(v){ return Math.round(v*10)/10; }
+function coreRound2(v){ return Math.round(v*100)/100; }
+
+function coreFmt1(v){
+  if(v===null||v===undefined||Number.isNaN(v)) return '—';
+  return coreRound1(v).toFixed(1)+'s';
+}
+function coreFmt2(v){
+  if(v===null||v===undefined||Number.isNaN(v)) return '—';
+  return coreRound2(v).toFixed(2)+'s';
+}
+
+function coreMidiFromWritten(note, ks){
+  if(!note) return 60;
+  const semis={C:0,D:2,E:4,F:5,G:7,A:9,B:11};
+  let acc=0;
+  const k=ks||questionKeySig||selectedKeySig||activeKeySig();
+  if(k&&k.sharps&&k.sharps.includes(note.n)) acc=1;
+  if(k&&k.flats&&k.flats.includes(note.n)) acc=-1;
+  if(typeof note.midi==='number') return note.midi;
+  return (note.o+1)*12 + semis[note.n] + acc;
+}
+
+function coreMidiLabel(midi){
+  const names=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+  const pc=((midi%12)+12)%12;
+  return names[pc]+(Math.floor(midi/12)-1);
+}
+
+function coreNoteLabel(note, ks){
+  if(!note) return '—';
+  const k=ks||questionKeySig||selectedKeySig||activeKeySig();
+  const midi=coreMidiFromWritten(note,k);
+  if(k&&k.flats&&k.flats.includes(note.n)) return `${note.n}♭${note.o}`;
+  if(k&&k.sharps&&k.sharps.includes(note.n)) return `${note.n}♯${note.o}`;
+  return `${note.n}${note.o}`;
+}
+
+function coreClampOctave(note, ks){
+  const out={n:note.n,o:note.o};
+  let guard=0;
+  while(coreMidiFromWritten(out,ks)<CORE_MIN_MIDI && guard++<12) out.o++;
+  guard=0;
+  while(coreMidiFromWritten(out,ks)>CORE_MAX_MIDI && guard++<12) out.o--;
+  return out;
+}
+
+function coreInRange(note, ks){
+  const m=coreMidiFromWritten(note,ks);
+  return m>=CORE_MIN_MIDI && m<=CORE_MAX_MIDI;
+}
+
+function corePick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+
+function coreDiatonicStep(note){
+  const order=['C','D','E','F','G','A','B'];
+  return note.o*7+order.indexOf(note.n);
+}
+
+function coreChooseClef(){
+  if(clefMode==='treble') return 'treble';
+  if(clefMode==='bass') return 'bass';
+  return Math.random()<0.5?'treble':'bass';
+}
+
+function coreChooseKeySig(){
+  // Honor the newer key-training mode if present.
+  if(typeof keyTrainingMode!=='undefined' && keyTrainingMode==='fixed') return selectedKeySig;
+  const lv=parseInt(difficultyLevel,10)||1;
+  if(lv>=10) return corePick(KEY_SIGS);
+  if(lv>=9){
+    const base=KEY_SIGS.indexOf(selectedKeySig);
+    const candidates=[base,base-1,base+1,base-2,base+2].filter(i=>i>=0&&i<KEY_SIGS.length);
+    return KEY_SIGS[corePick(candidates)];
+  }
+  return selectedKeySig;
+}
+
+function corePoolFor(clef, ks){
+  const base = clef==='bass'
+    ? [
+        {n:'C',o:2},{n:'D',o:2},{n:'E',o:2},{n:'F',o:2},{n:'G',o:2},{n:'A',o:2},{n:'B',o:2},
+        {n:'C',o:3},{n:'D',o:3},{n:'E',o:3},{n:'F',o:3},{n:'G',o:3},{n:'A',o:3},{n:'B',o:3},
+        {n:'C',o:4},{n:'D',o:4},{n:'E',o:4},{n:'F',o:4},{n:'G',o:4}
+      ]
+    : [
+        {n:'G',o:3},{n:'A',o:3},{n:'B',o:3},
+        {n:'C',o:4},{n:'D',o:4},{n:'E',o:4},{n:'F',o:4},{n:'G',o:4},{n:'A',o:4},{n:'B',o:4},
+        {n:'C',o:5},{n:'D',o:5},{n:'E',o:5},{n:'F',o:5},{n:'G',o:5},{n:'A',o:5},{n:'B',o:5},{n:'C',o:6}
+      ];
+  const seen=new Set();
+  return base.map(n=>coreClampOctave(n,ks)).filter(n=>{
+    const m=coreMidiFromWritten(n,ks);
+    if(m<CORE_MIN_MIDI||m>CORE_MAX_MIDI) return false;
+    if(seen.has(m)) return false;
+    seen.add(m);
+    return true;
+  });
+}
+
+function coreResolveSeqLen(){
+  if(sequenceLength==='random') return 2+Math.floor(Math.random()*4);
+  const n=parseInt(sequenceLength,10)||5;
+  return Math.max(2,Math.min(20,n));
+}
+
+function coreResolveChordSize(){
+  if(chordSize==='random') return 2+Math.floor(Math.random()*4);
+  return Math.max(2,Math.min(5,parseInt(chordSize,10)||2));
+}
+
+function coreProgressionPools(pool){
+  const patterns=[
+    ['C','E','G'],
+    ['G','B','D'],
+    ['A','C','E'],
+    ['F','A','C'],
+    ['D','F','A'],
+    ['G','B','D'],
+    ['C','E','G']
+  ];
+  return patterns.map(p=>pool.filter(n=>p.includes(n.n)));
+}
+
+function coreGenerateMelodyQuestion(){
+  const ks=coreChooseKeySig();
+  questionKeySig=ks;
+  currentClef=coreChooseClef();
+  const pool=corePoolFor(currentClef,ks);
+  const len=coreResolveSeqLen();
+  const prog=coreProgressionPools(pool);
+  const notes=[];
+  let last=corePick(pool);
+  for(let i=0;i<len;i++){
+    let options=prog[i%prog.length].length?prog[i%prog.length]:pool;
+    const lv=parseInt(difficultyLevel,10)||1;
+    const maxJump = fiveFingerMode ? (lv>=6?7:5) : (lv>=8?12:8);
+    options=options.filter(n=>Math.abs(coreDiatonicStep(n)-coreDiatonicStep(last))<=maxJump);
+    if(!options.length) options=pool;
+    // Weighted jump: mostly musical/near, sometimes larger.
+    const weighted=options.map(n=>{
+      const d=Math.abs(coreDiatonicStep(n)-coreDiatonicStep(last));
+      let w=1;
+      if(d<=2) w+=2.5;
+      if(d>=4) w+=Math.min(4,lv*.45);
+      return {n,w};
+    });
+    let total=weighted.reduce((s,x)=>s+x.w,0), r=Math.random()*total, picked=weighted[0].n;
+    for(const item of weighted){ r-=item.w; if(r<=0){picked=item.n;break;} }
+    last={...picked};
+    notes.push({...last,midi:coreMidiFromWritten(last,ks),label:coreNoteLabel(last,ks)});
+  }
+  return {mode:'sequence',keySig:ks,clef:currentClef,items:notes,index:0,results:[]};
+}
+
+function coreGenerateChordBundle(pool, ks, size){
+  const prog=coreProgressionPools(pool);
+  const chordTones=corePick(prog.filter(x=>x.length>=Math.min(size,3)).length?prog.filter(x=>x.length>=Math.min(size,3)):prog);
+  let base=[...chordTones];
+  if(!base.length) base=[...pool];
+
+  // Build unique MIDI chord tones first.
+  const notes=[];
+  const seen=new Set();
+  let guard=0;
+  while(notes.length<size && guard++<80){
+    let n={...corePick(base)};
+    const lv=parseInt(difficultyLevel,10)||1;
+    if(!fiveFingerMode && lv>=5 && Math.random()<0.45) n.o += Math.random()<0.5?1:-1;
+    n=coreClampOctave(n,ks);
+    const m=coreMidiFromWritten(n,ks);
+    if(m<CORE_MIN_MIDI||m>CORE_MAX_MIDI||seen.has(m)) continue;
+    seen.add(m);
+    notes.push({...n,midi:m,label:coreNoteLabel(n,ks)});
+  }
+
+  // Fallback fill from pool.
+  guard=0;
+  while(notes.length<size && guard++<100){
+    let n={...corePick(pool)};
+    n=coreClampOctave(n,ks);
+    const m=coreMidiFromWritten(n,ks);
+    if(seen.has(m)) continue;
+    seen.add(m);
+    notes.push({...n,midi:m,label:coreNoteLabel(n,ks)});
+  }
+
+  notes.sort((a,b)=>a.midi-b.midi);
+  return {notes};
+}
+
+function coreGenerateChordQuestion(){
+  const ks=coreChooseKeySig();
+  questionKeySig=ks;
+  currentClef=coreChooseClef();
+  const pool=corePoolFor(currentClef,ks);
+  const len=coreResolveSeqLen();
+  const size=coreResolveChordSize();
+  const bundles=[];
+  for(let i=0;i<len;i++) bundles.push(coreGenerateChordBundle(pool,ks,size));
+  return {mode:'chordseq',keySig:ks,clef:currentClef,bundles,index:0,results:[],chordSize:size};
+}
+
+function coreApplyQuestionToLegacy(){
+  if(!coreQuestion) return;
+  questionKeySig=coreQuestion.keySig;
+  currentClef=coreQuestion.clef;
+  if(coreQuestion.mode==='sequence'){
+    questionMode='sequence';
+    currentSequence=coreQuestion.items.map(x=>({n:x.n,o:x.o,midi:x.midi,label:x.label}));
+    sequenceIndex=coreQuestion.index;
+    sequenceResults=coreQuestion.results;
+    currentNote=currentSequence[Math.min(sequenceIndex,currentSequence.length-1)]||currentSequence[0];
+    currentChordSequence=[];
+    currentChord=null;
+  }else{
+    questionMode='chordseq';
+    currentChordSequence=coreQuestion.bundles.map((b,i)=>({
+      notes:b.notes.map(n=>({n:n.n,o:n.o,midi:n.midi,label:n.label})),
+      letters:[...new Set(b.notes.map(n=>n.n))],
+      label:`Bundle ${i+1}`,
+      jp:b.notes.map(n=>n.label).join('・'),
+      voicingLabel:'Core'
+    }));
+    chordSequenceIndex=coreQuestion.index;
+    chordSequenceResults=coreQuestion.results;
+    chordSequenceSelections=coreQuestion.results.map(r=>r?r.pressedKeys||[]:[]);
+    currentChord=currentChordSequence[Math.min(chordSequenceIndex,currentChordSequence.length-1)]||currentChordSequence[0];
+    currentNote=currentChord&&currentChord.notes?currentChord.notes[0]:null;
+    currentChordSize=coreQuestion.chordSize;
+    chordPitchSelection.clear();
+    chordPitchOrder=[];
+  }
+}
+
+function coreUpdateModeButtons(){
+  document.querySelectorAll('[id^=qtab-]').forEach(x=>x.classList.remove('active'));
+  const qtab=document.getElementById(questionMode==='chordseq'?'qtab-chordseq':'qtab-sequence');
+  if(qtab) qtab.classList.add('active');
+  const tm=document.getElementById('top-mode-melody');
+  const tc=document.getElementById('top-mode-chord');
+  if(tm) tm.classList.toggle('active',questionMode==='sequence');
+  if(tc) tc.classList.toggle('active',questionMode==='chordseq');
+  const panel=document.getElementById('chord-panel');
+  if(panel) panel.classList.toggle('show',questionMode==='chordseq');
+}
+
+function coreResetTiming(){
+  coreAttemptStartAt=coreNow();
+  coreFirstInputAt=0;
+  coreKeyTimes=[];
+  coreLastCompletedAt=0;
+}
+
+function coreStartItemTiming(){
+  coreAttemptStartAt=coreNow();
+  coreFirstInputAt=0;
+  coreKeyTimes=[];
+}
+
+function coreMarkInput(){
+  const t=coreNow();
+  if(!coreFirstInputAt) coreFirstInputAt=t;
+  coreKeyTimes.push(t);
+}
+
+function coreAttemptTiming(){
+  const now=coreNow();
+  const first=coreFirstInputAt||now;
+  const readSec=coreRound1((first-coreAttemptStartAt)/1000);
+  const inputSec=coreRound1((now-first)/1000);
+  let gapSec=null;
+  if(questionMode==='sequence'){
+    if(coreLastCompletedAt) gapSec=coreRound2((first-coreLastCompletedAt)/1000);
+    coreLastCompletedAt=now;
+  }else{
+    if(coreKeyTimes.length>=2){
+      let sum=0;
+      for(let i=1;i<coreKeyTimes.length;i++) sum += coreKeyTimes[i]-coreKeyTimes[i-1];
+      gapSec=coreRound2((sum/(coreKeyTimes.length-1))/1000);
+    }
+  }
+  return {readSec,inputSec,gapSec,elapsedSec:coreRound1((now-coreAttemptStartAt)/1000)};
+}
+
+function corePressedMidiFromNoteButton(letter){
+  // Note-name buttons cannot express flats/sharps directly, so they only work
+  // when the written/active note's physical MIDI matches the expected pitch.
+  const expected = questionMode==='sequence' && coreQuestion ? coreQuestion.items[coreQuestion.index] : null;
+  if(expected && expected.n===letter) return expected.midi;
+  return null;
+}
+
+function coreRecordAttempt(result){
+  const entry={
+    at:new Date().toISOString(),
+    mode:questionMode,
+    clef:currentClef,
+    key:activeKeySig().label,
+    no:result.no,
+    expected:result.expectedLabel,
+    pressed:result.pressedLabel,
+    readSec:result.readSec,
+    inputSec:result.inputSec,
+    gapSec:result.gapSec,
+    elapsedSec:result.elapsedSec,
+    slowRead:result.readSec>=3,
+    slowInput:result.inputSec>=2.5,
+    slowGap:result.gapSec!==null&&result.gapSec>=1.5,
+    slow:(result.readSec>=3||result.inputSec>=2.5||(result.gapSec!==null&&result.gapSec>=1.5)),
+    correct:result.correct,
+    difficultyLevel
+  };
+  sessionAttemptLog.push(entry);
+  if(sessionAttemptLog.length>500) sessionAttemptLog=sessionAttemptLog.slice(-500);
+
+  history.unshift({
+    note: result.expectedNote ? result.expectedNote.n : (questionMode==='chordseq'?'Chord':'?'),
+    oct: result.expectedNote ? result.expectedNote.o : '',
+    jp: result.expectedLabel,
+    clef: currentClef,
+    correct: result.correct,
+    answered: result.pressedLabel,
+    answeredLabel: result.pressedLabel,
+    keySig: activeKeySig(),
+    notes: result.answerNotes || (result.expectedNote?[result.expectedNote]:[]),
+    wrongNotes: result.wrongNotes||[],
+    chord: questionMode==='chordseq',
+    label: questionMode==='chordseq'?`Bundle ${coreQuestion.index+1}`:undefined,
+    letters: result.answerNotes?[...new Set(result.answerNotes.map(n=>n.n))]:undefined,
+    attempt: entry
+  });
+  if(history.length>30) history.pop();
+  renderHistory();
+  updateStats();
+  return entry;
+}
+
+function coreFinishSet(){
+  answered=true;
+  const total=coreQuestion.mode==='sequence'?coreQuestion.items.length:coreQuestion.bundles.length;
+  const ok=coreQuestion.results.filter(r=>r&&r.correct).length;
+  tryAutoLevelUp(ok,total);
+  const fb=document.getElementById('feedback');
+  if(fb){
+    fb.textContent=`${ok===total?'✓':'△'} ${coreQuestion.mode==='sequence'?'単音連続':'重音連続'} CLEAR ${ok}/${total}`;
+    fb.className=ok===total?'feedback-bar ok':'feedback-bar ng';
+  }
+  const nextBtn=document.getElementById('next-btn');
+  if(shouldAutoMoveNext && shouldAutoMoveNext()){
+    if(nextBtn) nextBtn.style.display='none';
+    coreAutoMoveTimer=setTimeout(()=>nextQuestion(), timeAttackActive?850:1200);
+  }else if(nextBtn){
+    nextBtn.style.display='block';
+  }
+}
+
+function nextQuestion(){
+  clearTimeout(coreAutoMoveTimer);
+  clearTimeout(autoTimer);
+  cancelChordAutoSubmit && cancelChordAutoSubmit();
+  answered=false;
+  reviewingIdx=null;
+  chordPitchSelection.clear();
+  chordPitchOrder=[];
+  lastKeyboardPitch=null;
+
+  coreQuestion = (questionMode==='chordseq') ? coreGenerateChordQuestion() : coreGenerateMelodyQuestion();
+  coreApplyQuestionToLegacy();
+  coreUpdateModeButtons();
+  keyboardAutoPositionPending=true;
+  const nextBtn=document.getElementById('next-btn');
+  if(nextBtn) nextBtn.style.display='none';
+
+  const clefJP=currentClef==='treble'?'ト音記号':'ヘ音記号';
+  const label=document.getElementById('clef-label');
+  if(label) label.textContent=(currentClef==='treble'?'TREBLE CLEF':'BASS CLEF')+' — '+clefJP+(questionMode==='chordseq'?' / CHORD SEQ':' / MELODY SEQ')+' / '+activeKeySig().label;
+
+  const fb=document.getElementById('feedback');
+  if(fb){
+    const total=questionMode==='chordseq'?coreQuestion.bundles.length:coreQuestion.items.length;
+    fb.textContent=`${questionMode==='chordseq'?'重音連続':'単音連続'} 1/${total} — MIDI実音判定`;
+    fb.className='feedback-bar wait';
+  }
+  coreResetTiming();
+  renderStaff();
+  renderKeyboard(null);
+  updateChordPanel();
+  updateChordCheckDock();
+  updateChallengeStatus();
+  updateKeySignaturePanelState && updateKeySignaturePanelState();
+  scheduleTipAssist && scheduleTipAssist();
+}
+
+function setQuestionMode(mode,el){
+  questionMode=(mode==='chord'||mode==='chordseq')?'chordseq':'sequence';
+  coreUpdateModeButtons();
+  nextQuestion();
+}
+
+function setChordSize(size){
+  chordSize=size==='random'?'random':parseInt(size,10);
+  document.querySelectorAll('[id^=chord-size-], [id^=top-chord-size-]').forEach(x=>x.classList.remove('active'));
+  const id=''+chordSize;
+  const btn=document.getElementById('chord-size-'+id);
+  const topBtn=document.getElementById('top-chord-size-'+id);
+  if(btn) btn.classList.add('active');
+  if(topBtn) topBtn.classList.add('active');
+  questionMode='chordseq';
+  coreUpdateModeButtons();
+  updatePracticeSummary();
+  nextQuestion();
+}
+
+function setChordVoicing(mode){
+  chordVoicingMode=mode;
+  document.querySelectorAll('[id^=voicing-], [id^=top-voicing-]').forEach(x=>x.classList.remove('active'));
+  const btn=document.getElementById('voicing-'+mode);
+  const topBtn=document.getElementById('top-voicing-'+mode);
+  if(btn) btn.classList.add('active');
+  if(topBtn) topBtn.classList.add('active');
+  questionMode='chordseq';
+  coreUpdateModeButtons();
+  updatePracticeSummary();
+  nextQuestion();
+}
+
+function selectNote(n,displayLabel=n){
+  hideTipAssist && hideTipAssist();
+  if(!coreQuestion || coreQuestion.mode!=='sequence' || answered) return;
+  coreMarkInput();
+  const item=coreQuestion.items[coreQuestion.index];
+  const pressedMidi = lastKeyboardPitch&&typeof lastKeyboardPitch.midi==='number'
+    ? lastKeyboardPitch.midi
+    : corePressedMidiFromNoteButton(n);
+  const pressedLabel = lastKeyboardPitch&&typeof lastKeyboardPitch.midi==='number'
+    ? coreMidiLabel(lastKeyboardPitch.midi)
+    : displayLabel;
+  const correct = pressedMidi===item.midi;
+  const timing=coreAttemptTiming();
+
+  stats.total++;
+  if(correct){stats.correct++;stats.streak++;}else{stats.streak=0;}
+
+  const wrongNotes = correct?[]:(lastKeyboardPitch?[lastKeyboardPitch]:[]);
+  coreQuestion.results[coreQuestion.index]={correct,pressedMidi,pressedLabel,...timing};
+
+  coreRecordAttempt({
+    no:`${coreQuestion.index+1}/${coreQuestion.items.length}`,
+    expectedLabel:item.label||coreNoteLabel(item,coreQuestion.keySig),
+    pressedLabel:pressedLabel||'—',
+    expectedNote:item,
+    answerNotes:[item],
+    wrongNotes,
+    correct,
+    ...timing
+  });
+
+  document.querySelectorAll('.note-btn').forEach(b=>{
+    const en=b.querySelector('.en').textContent;
+    b.classList.remove('correct','wrong','selected');
+    if(en===n&&!correct) b.classList.add('wrong');
+    if(en===item.n) b.classList.add('correct');
+  });
+
+  renderKeyboard([item],wrongNotes);
+  const fb=document.getElementById('feedback');
+  if(fb){
+    fb.textContent=correct?`✓ 正解 ${item.label}`:`✗ 正解: ${item.label}　選択: ${pressedLabel}`;
+    fb.className=correct?'feedback-bar ok':'feedback-bar ng';
+  }
+  renderStaff();
+
+  coreQuestion.index++;
+  if(coreQuestion.index>=coreQuestion.items.length){
+    sequenceIndex=coreQuestion.items.length;
+    setTimeout(()=>coreFinishSet(),450);
+    return;
+  }
+  setTimeout(()=>{
+    coreApplyQuestionToLegacy();
+    currentNote=currentSequence[coreQuestion.index];
+    coreStartItemTiming();
+    renderStaff();
+    renderKeyboard(null);
+    const total=coreQuestion.items.length;
+    if(fb){fb.textContent=`単音連続 ${coreQuestion.index+1}/${total} — MIDI実音判定`;fb.className='feedback-bar wait';}
+    scheduleTipAssist && scheduleTipAssist();
+  }, timeAttackActive?350:650);
+}
+
+function toggleChordPitch(note){
+  if(!coreQuestion || coreQuestion.mode!=='chordseq' || answered || chordAutoSubmitting) return;
+  coreMarkInput();
+  const key='m'+(typeof note.midi==='number'?note.midi:noteToMidi(note));
+  if(chordPitchSelection.has(key)){
+    chordPitchSelection.delete(key);
+    chordPitchOrder=chordPitchOrder.filter(k=>k!==key);
+  }else{
+    chordPitchSelection.add(key);
+    chordPitchOrder=chordPitchOrder.filter(k=>k!==key);
+    chordPitchOrder.push(key);
+  }
+  renderKeyboard(null);
+  updateChordPanel();
+  if(chordPitchSelection.size>=coreQuestion.chordSize){
+    setTimeout(()=>submitChordAnswer(true),180);
+  }
+}
+
+function submitChordAnswer(autoTriggered=false){
+  hideTipAssist && hideTipAssist();
+  if(!coreQuestion || coreQuestion.mode!=='chordseq' || answered) return;
+  const bundle=coreQuestion.bundles[coreQuestion.index];
+  if(!bundle) return;
+  const answerSet=new Set(bundle.notes.map(n=>n.midi));
+  const selected=[...chordPitchSelection];
+  const pressedMidis=selected.map(k=>parseInt(String(k).replace(/^m/,''),10)).filter(n=>!Number.isNaN(n));
+  const correct=pressedMidis.length===answerSet.size && pressedMidis.every(m=>answerSet.has(m));
+  const timing=coreAttemptTiming();
+  const wrongNotes=pressedMidis.filter(m=>!answerSet.has(m)).map(m=>({n:coreMidiLabel(m).charAt(0),o:parseInt(coreMidiLabel(m).slice(-1),10)||4,midi:m,physical:true,label:coreMidiLabel(m)}));
+
+  stats.total++;
+  if(correct){stats.correct++;stats.streak++;}else{stats.streak=0;}
+
+  coreQuestion.results[coreQuestion.index]={correct,pressedMidis,pressedKeys:selected,...timing};
+  coreRecordAttempt({
+    no:`${coreQuestion.index+1}/${coreQuestion.bundles.length}`,
+    expectedLabel:bundle.notes.map(n=>n.label).join('・'),
+    pressedLabel:pressedMidis.map(coreMidiLabel).join('・')||'—',
+    answerNotes:bundle.notes,
+    wrongNotes,
+    correct,
+    ...timing
+  });
+
+  renderKeyboard(bundle.notes,wrongNotes);
+  const fb=document.getElementById('feedback');
+  if(fb){
+    fb.textContent=correct?`✓ 束 ${coreQuestion.index+1}/${coreQuestion.bundles.length} 正解`:`✗ 束 ${coreQuestion.index+1}/${coreQuestion.bundles.length} 不正解`;
+    fb.className=correct?'feedback-bar ok':'feedback-bar ng';
+  }
+  renderStaff();
+
+  coreQuestion.index++;
+  if(coreQuestion.index>=coreQuestion.bundles.length){
+    chordSequenceIndex=coreQuestion.bundles.length;
+    chordPitchSelection.clear();
+    chordPitchOrder=[];
+    setTimeout(()=>coreFinishSet(),500);
+    return;
+  }
+
+  setTimeout(()=>{
+    chordPitchSelection.clear();
+    chordPitchOrder=[];
+    coreApplyQuestionToLegacy();
+    currentChord=currentChordSequence[coreQuestion.index];
+    currentNote=currentChord.notes[0];
+    coreStartItemTiming();
+    renderStaff();
+    renderKeyboard(null);
+    updateChordPanel();
+    updateChordCheckDock();
+    if(fb){fb.textContent=`重音連続 ${coreQuestion.index+1}/${coreQuestion.bundles.length} — 必要音数を選ぶと自動判定`;fb.className='feedback-bar wait';}
+    scheduleTipAssist && scheduleTipAssist();
+  }, timeAttackActive?450:750);
+}
+
+function reviewHistory(i){
+  const h=history[i];
+  if(!h) return;
+  clearTimeout(coreAutoMoveTimer);
+  reviewingIdx=i;
+  renderHistory();
+  const saved={clef:currentClef,note:currentNote,mode:questionMode,chord:currentChord,key:questionKeySig};
+  currentClef=h.clef;
+  questionKeySig=h.keySig||selectedKeySig;
+  if(h.chord){
+    questionMode='chordseq';
+    currentChord={notes:h.notes||[],letters:[...new Set((h.notes||[]).map(n=>n.n))],label:h.label||'Chord'};
+    currentNote=(h.notes&&h.notes[0])||currentNote;
+  }else{
+    questionMode='sequence';
+    currentNote=h.notes&&h.notes[0]?h.notes[0]:{n:h.note,o:h.oct,midi:h.attempt?undefined:undefined};
+  }
+  const label=document.getElementById('clef-label');
+  if(label) label.textContent=(h.clef==='treble'?'TREBLE CLEF':'BASS CLEF')+' — '+(h.clef==='treble'?'ト音記号':'ヘ音記号')+' 【履歴 '+(i+1)+'】';
+  renderStaff();
+  renderKeyboard(h.notes&&h.notes.length?h.notes:currentNote,h.wrongNotes||[]);
+  const fb=document.getElementById('feedback');
+  if(fb){
+    fb.textContent=h.correct?`✓ 正解: ${h.jp}`:`✗ 正解: ${h.jp}　選択: ${h.answeredLabel||h.answered}`;
+    fb.className=h.correct?'feedback-bar ok':'feedback-bar ng';
+  }
+  currentClef=saved.clef; currentNote=saved.note; questionMode=saved.mode; currentChord=saved.chord; questionKeySig=saved.key;
+}
+
+
 // INIT
 let appInitialized=false;
 
