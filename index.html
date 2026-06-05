@@ -658,9 +658,10 @@ input[type="range"]{accent-color:#7DB7FF;}
 .result-section{margin-top:12px;padding:12px;border-radius:16px;background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.09);font-size:13px;line-height:1.65;color:rgba(246,241,231,.82);}
 .result-section-title{font-family:var(--mono);font-size:11px;color:#FFE2A6;letter-spacing:.08em;margin-bottom:5px;}
 .result-attempt-list{display:flex;flex-direction:column;gap:6px;max-height:220px;overflow:auto;}
-.result-attempt-row{display:grid;grid-template-columns:42px 1fr 1fr 46px;gap:8px;align-items:center;padding:7px 9px;border-radius:12px;background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.08);font-family:var(--mono);font-size:11px;color:rgba(246,241,231,.82);}
+.result-attempt-row{display:grid;grid-template-columns:42px 1fr 1fr 58px 46px;gap:8px;align-items:center;padding:7px 9px;border-radius:12px;background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.08);font-family:var(--mono);font-size:11px;color:rgba(246,241,231,.82);}
 .result-attempt-row.ok{border-color:rgba(83,212,140,.25);background:rgba(83,212,140,.08);}
 .result-attempt-row.ng{border-color:rgba(255,107,118,.25);background:rgba(255,107,118,.08);}
+.result-attempt-row.slow{box-shadow:inset 3px 0 0 rgba(247,185,85,.75);}
 .result-attempt-head{color:rgba(246,241,231,.46);font-size:10px;}
 .result-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;}
 .result-actions button{flex:1;min-width:130px;border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:12px 14px;font-family:var(--mono);font-weight:700;cursor:pointer;color:#fff;background:rgba(255,255,255,.09);}
@@ -1129,7 +1130,7 @@ input[type="range"]{accent-color:#7DB7FF;}
     <div class="result-section">
       <div class="result-section-title">打鍵履歴 / KEYSTROKE REVIEW</div>
       <div class="result-attempt-list" id="result-attempt-list">
-        <div class="result-attempt-row result-attempt-head"><span>No.</span><span>Answer</span><span>Pressed</span><span>Result</span></div>
+        <div class="result-attempt-row result-attempt-head"><span>No.</span><span>Answer</span><span>Pressed</span><span>Time</span><span>Result</span></div>
       </div>
     </div>
     <div class="result-actions">
@@ -1243,6 +1244,8 @@ let pendingResultRecord=null;
 let timeAttackActive=false;
 let sessionAttemptLog=[];
 let challengeStartAttemptIndex=0;
+let questionStartedAt=0;
+let currentBundleStartedAt=0;
 let tipAssistTimer=null;
 let tipAssistShown=false;
 let chordSize=2;
@@ -2501,6 +2504,7 @@ function submitChordAnswer(autoTriggered=false){
         no:`${idx+1}/${seqLen}`,
         expected:(currentChord.notes||[]).map(pitchLabel).join('・'),
         pressed:formatChordSelection(saved),
+        elapsedSec:elapsedFrom(currentBundleStartedAt||questionStartedAt),
         correct:bundleResult.correct
       });
       addAttemptHistory({
@@ -2552,6 +2556,7 @@ function submitChordAnswer(autoTriggered=false){
           chordPitchOrder=[];
           keyboardAutoPositionPending=true;
           chordAutoSubmitting=false;
+          startBundleTiming();
           renderStaff();
           renderKeyboard(null);
           updateChordPanel();
@@ -2988,6 +2993,7 @@ function nextQuestion(){
   document.getElementById('clef-label').textContent=(currentClef==='treble'?'TREBLE CLEF':'BASS CLEF')+' — '+clefJP+(questionMode==='chordseq'?' / CHORD SEQ':' / MELODY SEQ')+' / '+activeKeySig().label;
   updateKeyTip();
   updateChordPanel();
+  resetQuestionTiming();
   scheduleTipAssist();
 }
 
@@ -3010,6 +3016,7 @@ function selectNote(n,displayLabel=n){
       no:`${sequenceIndex+1}/${currentSequence.length}`,
       expected:pitchLabel(expected),
       pressed:displayLabel,
+      elapsedSec:elapsedFrom(sequenceIndex===0?questionStartedAt:currentBundleStartedAt),
       correct
     });
     addAttemptHistory({
@@ -3056,6 +3063,7 @@ function selectNote(n,displayLabel=n){
         nextBtn.style.display='block';
       }
     }else{
+      startBundleTiming();
       updateSequenceFeedback();
       scheduleTipAssist();
     }
@@ -3201,11 +3209,12 @@ function renderHistory(){
       const bg=a.correct?'rgba(83,212,140,.10)':'rgba(255,107,118,.12)';
       const border=a.correct?'rgba(83,212,140,.28)':'rgba(255,107,118,.30)';
       const icon=a.correct?'✓':'✗';
-      row.style.cssText=`display:grid;grid-template-columns:28px 1fr 1fr 28px;gap:8px;align-items:center;padding:8px 10px;`
+      row.style.cssText=`display:grid;grid-template-columns:28px 1fr 1fr 52px 28px;gap:8px;align-items:center;padding:8px 10px;`
         +`background:${bg};border:1px solid ${border};border-radius:12px;font-family:'DM Mono',monospace;color:rgba(246,241,231,.86);`;
       row.innerHTML=`<span style="font-size:10px;color:rgba(246,241,231,.46);">${i+1}</span>`
         +`<span style="font-size:12px;">正解 ${a.expected||'—'}</span>`
         +`<span style="font-size:12px;">押下 ${a.pressed||'—'}</span>`
+        +`<span style="font-size:11px;color:${a.slow?'#FFE2A6':'rgba(246,241,231,.62)'};">${formatAttemptTime(a.elapsedSec)}</span>`
         +`<span style="font-size:14px;font-weight:700;color:${a.correct?'#78F0A9':'#FF8D95'};">${icon}</span>`;
       list.appendChild(row);
     });
@@ -3221,7 +3230,7 @@ function renderHistory(){
     const clefLabel=h.clef==='treble'?'T':'B';
     const clefColor=h.clef==='treble'?'#7DB7FF':'#B58CFF';
     const row=document.createElement('div');
-    row.style.cssText=`display:grid;grid-template-columns:22px 28px minmax(64px,.8fr) 1.2fr auto;align-items:center;gap:8px;padding:8px 10px;`
+    row.style.cssText=`display:grid;grid-template-columns:22px 28px minmax(64px,.8fr) 1.2fr 52px auto;align-items:center;gap:8px;padding:8px 10px;`
       +`background:${bg};border:1px solid ${border};border-radius:12px;font-family:'DM Mono',monospace;`
       +`cursor:pointer;transition:opacity .1s;color:rgba(246,241,231,.86);`;
     row.title='タップして五線・鍵盤を確認';
@@ -3247,7 +3256,10 @@ function renderHistory(){
     pressed.style.cssText=`font-size:11px;color:${h.correct?'rgba(120,240,169,.90)':'#FFB6BC'};white-space:nowrap;`;
     pressed.textContent=h.correct?icon:`${icon} 押下: ${h.answeredLabel||h.answered}`;
 
-    row.appendChild(idx);row.appendChild(cb);row.appendChild(note);row.appendChild(jp);row.appendChild(pressed);
+    const tm=document.createElement('span');
+    tm.style.cssText=`font-size:11px;color:${h.attempt&&h.attempt.slow?'#FFE2A6':'rgba(246,241,231,.62)'};white-space:nowrap;`;
+    tm.textContent=h.attempt?formatAttemptTime(h.attempt.elapsedSec):'—';
+    row.appendChild(idx);row.appendChild(cb);row.appendChild(note);row.appendChild(jp);row.appendChild(tm);row.appendChild(pressed);
     list.appendChild(row);
   });
 }
@@ -3763,6 +3775,35 @@ function attemptAnswerLabelFromKeys(keys){
   return (keys||[]).map(k=>pitchLabel(parsePitchKey(k))).join('・')||'—';
 }
 
+
+function resetQuestionTiming(){
+  questionStartedAt=performance.now();
+  currentBundleStartedAt=questionStartedAt;
+}
+
+function startBundleTiming(){
+  currentBundleStartedAt=performance.now();
+}
+
+function elapsedFrom(start){
+  if(!start) return null;
+  return Math.max(0,Math.round((performance.now()-start)/100)/10);
+}
+
+function formatAttemptTime(sec){
+  if(sec===null||sec===undefined||Number.isNaN(sec)) return '—';
+  return `${Math.round(sec*10)/10}s`;
+}
+
+function slowAttemptThreshold(){
+  if(questionMode==='chordseq') return difficultyLevel>=7?3.0:4.0;
+  return difficultyLevel>=7?1.8:2.5;
+}
+
+function isSlowAttempt(sec){
+  return typeof sec==='number' && sec>=slowAttemptThreshold();
+}
+
 function addSessionAttempt(entry){
   const item={
     at:new Date().toISOString(),
@@ -3772,6 +3813,8 @@ function addSessionAttempt(entry){
     no:entry.no||'',
     expected:entry.expected||'—',
     pressed:entry.pressed||'—',
+    elapsedSec:entry.elapsedSec,
+    slow:isSlowAttempt(entry.elapsedSec),
     correct:!!entry.correct,
     difficultyLevel:entry.difficultyLevel||difficultyLevel
   };
@@ -3799,11 +3842,11 @@ function renderResultAttemptList(attempts){
   if(!box) return;
   const rows=(attempts||[]).slice(-60);
   if(!rows.length){
-    box.innerHTML='<div class="result-attempt-row result-attempt-head"><span>—</span><span>まだ打鍵履歴がありません</span><span>—</span><span>—</span></div>';
+    box.innerHTML='<div class="result-attempt-row result-attempt-head"><span>—</span><span>まだ打鍵履歴がありません</span><span>—</span><span>—</span><span>—</span></div>';
     return;
   }
-  box.innerHTML='<div class="result-attempt-row result-attempt-head"><span>No.</span><span>正解</span><span>押した音</span><span>結果</span></div>'
-    + rows.map((a,i)=>`<div class="result-attempt-row ${a.correct?'ok':'ng'}"><span>${a.no||i+1}</span><span>${a.expected||'—'}</span><span>${a.pressed||'—'}</span><span>${a.correct?'✓':'✗'}</span></div>`).join('');
+  box.innerHTML='<div class="result-attempt-row result-attempt-head"><span>No.</span><span>正解</span><span>押した音</span><span>時間</span><span>結果</span></div>'
+    + rows.map((a,i)=>`<div class="result-attempt-row ${a.correct?'ok':'ng'} ${a.slow?'slow':''}"><span>${a.no||i+1}</span><span>${a.expected||'—'}</span><span>${a.pressed||'—'}</span><span>${formatAttemptTime(a.elapsedSec)}</span><span>${a.correct?'✓':'✗'}</span></div>`).join('');
 }
 
 function openDailyLog(index){
@@ -3887,7 +3930,12 @@ function buildResultAdvice(record){
   const acc=record.accuracy||0;
   const weak=getWeakPointSummary();
   let improve='弱点データは蓄積中です。';
-  if(weak && !weak.includes('蓄積中')) improve=weak.replace('Weak point:','');
+  const attempts=(record.attempts||[]);
+  const slowest=attempts.slice().sort((a,b)=>(b.elapsedSec||0)-(a.elapsedSec||0))[0];
+  const slowCount=attempts.filter(a=>a.slow).length;
+  if(slowest&&slowest.elapsedSec){
+    improve=`最も時間がかかった箇所: ${slowest.no||''} / ${slowest.expected||'—'} → ${formatAttemptTime(slowest.elapsedSec)}${slowCount?` / 迷い ${slowCount}件`:''}`;
+  }else if(weak && !weak.includes('蓄積中')) improve=weak.replace('Weak point:','');
   let advice='まずは譜面を見てから鍵盤に降りるまでの時間を短くしましょう。';
   if(record.total===0){
     advice='今回は回答データがありません。START後は次の問題ボタンに頼らず、出た音を連続で処理してください。';
@@ -3901,6 +3949,7 @@ function buildResultAdvice(record){
     advice='まだ速度を上げる段階ではありません。5問・低めの難易度で、押す前に音名を頭の中で言う練習に戻してください。';
   }
   if(questionMode==='chordseq') advice += ' 重音は一番低い音を先に決めると、束全体の位置が安定します。';
+  if(record.attempts&&record.attempts.some(a=>a.slow)) advice += ' 黄色マークの行は、正解でも譜読みに時間がかかった箇所です。次回はその音域だけをゆっくり確認してください。';
   return {improve,advice};
 }
 
